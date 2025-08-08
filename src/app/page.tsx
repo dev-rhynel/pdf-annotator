@@ -1,103 +1,186 @@
-import Image from "next/image";
+'use client'
+
+import {useState, useRef, useEffect} from 'react'
+import SimplePDFViewer from '@/components/SimplePDFViewer'
+import AnnotationToolbar from '@/components/AnnotationToolbar'
+import {PDFErrorBoundary} from '@/components/PDFErrorBoundary'
+import {AnnotationType, Annotation} from '@/types/annotation'
+import {configurePDFWorker} from '@/utils/pdf-config'
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [pdfFile, setPdfFile] = useState<File | null>(null)
+  const [currentTool, setCurrentTool] = useState<AnnotationType>('none')
+  const [annotations, setAnnotations] = useState<Annotation[]>([])
+  const [selectedAnnotations, setSelectedAnnotations] = useState<string[]>([])
+  const [selectedPolygons, setSelectedPolygons] = useState<string[]>([])
+  const [selectedAnnotation, setSelectedAnnotation] = useState<string | null>(null)
+  const [selectedColor, setSelectedColor] = useState<string>('#ff0000')
+  const [strokeWidth, setStrokeWidth] = useState<number>(2)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  // Configure PDF worker on component mount
+  useEffect(() => {
+    configurePDFWorker()
+  }, [])
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file && file.type === 'application/pdf') {
+      setPdfFile(file)
+    }
+  }
+
+  const handleToolChange = (tool: AnnotationType) => {
+    console.log('Tool changed from', currentTool, 'to', tool)
+    setCurrentTool(tool)
+  }
+
+  const handleAnnotationAdd = (annotation: Annotation) => {
+    setAnnotations(prev => [...prev, annotation])
+  }
+
+  const handleAnnotationDelete = (id: string) => {
+    setAnnotations(prev => prev.filter(annotation => annotation.id !== id))
+  }
+
+  const handleAnnotationsReplace = (newAnnotations: Annotation[]) => {
+    setAnnotations(newAnnotations)
+  }
+
+  const deselectAll = () => {
+    setSelectedAnnotations([])
+    setSelectedPolygons([])
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100">
+      <div className="max-w-7xl mx-auto p-6">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
+              <svg
+                className="w-6 h-6 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+                PDF Annotator
+              </h1>
+              <p className="text-gray-600 text-sm">Professional PDF annotation tool</p>
+            </div>
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+        {!pdfFile ? (
+          <div className="card p-12 text-center max-w-md mx-auto">
+            <div className="mb-6">
+              <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg
+                  className="w-10 h-10 text-blue-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                  />
+                </svg>
+              </div>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                Upload a PDF to get started
+              </h2>
+              <p className="text-gray-600 text-sm leading-relaxed">
+                Drag and drop your PDF file here, or click to browse. Our tool supports all standard
+                PDF formats.
+              </p>
+            </div>
+
+            <input
+              type="file"
+              accept=".pdf"
+              onChange={handleFileUpload}
+              className="hidden"
+              id="file-upload"
+            />
+            <label
+              htmlFor="file-upload"
+              className="btn btn-primary btn-lg cursor-pointer shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
+            >
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              Choose PDF File
+            </label>
+
+            <div className="mt-6 text-xs text-gray-500">
+              <p>Supported formats: PDF</p>
+              <p>Maximum file size: 50MB</p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-6 h-full overflow-hidden">
+            {/* Fixed-width PDF Viewer */}
+            <div className="w-[800px] h-full flex-shrink-0">
+              <PDFErrorBoundary>
+                <SimplePDFViewer
+                  file={pdfFile}
+                  currentTool={currentTool}
+                  annotations={annotations}
+                  onAnnotationAdd={handleAnnotationAdd}
+                  onAnnotationsReplace={handleAnnotationsReplace}
+                  canvasRef={canvasRef}
+                  selectedAnnotations={selectedAnnotations}
+                  selectedPolygons={selectedPolygons}
+                  setSelectedAnnotations={setSelectedAnnotations}
+                  setSelectedPolygons={setSelectedPolygons}
+                  selectedColor={selectedColor}
+                  strokeWidth={strokeWidth}
+                  selectedAnnotation={selectedAnnotation}
+                  setSelectedAnnotation={setSelectedAnnotation}
+                />
+              </PDFErrorBoundary>
+            </div>
+
+            {/* Responsive Annotation Toolbar */}
+            <div className="flex-1 min-w-[320px] max-w-[400px] h-full">
+              <AnnotationToolbar
+                currentTool={currentTool}
+                onToolChange={handleToolChange}
+                annotations={annotations}
+                onAnnotationDelete={handleAnnotationDelete}
+                selectedAnnotations={selectedAnnotations}
+                selectedPolygons={selectedPolygons}
+                onDeselectAll={deselectAll}
+                selectedColor={selectedColor}
+                onColorChange={setSelectedColor}
+                strokeWidth={strokeWidth}
+                onStrokeWidthChange={setStrokeWidth}
+                selectedAnnotation={selectedAnnotation}
+                onAnnotationSelect={setSelectedAnnotation}
+              />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
-  );
+  )
 }
