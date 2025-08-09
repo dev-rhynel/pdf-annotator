@@ -8,6 +8,7 @@ A modern, feature-rich PDF annotation tool built with Next.js, TypeScript, and C
 
 - **Line Tool**: Draw straight lines with precise control
 - **Rectangle Tool**: Create rectangular shapes and boundaries
+- **🔺 Triangle Tool**: Three-click triangle creation with live preview and fill
 - **Circle Tool**: Draw perfect circles for highlighting areas
 - **Polygon Tool**: Multi-click polygon creation with live preview and fill
 - **Curve Tool**: Smooth curved lines with quadratic curve interpolation
@@ -103,7 +104,7 @@ npm run test:coverage
 
 ### 2. **Select Drawing Tool**
 
-- Choose from Line, Rectangle, Circle, Polygon, Curve, Pencil, or Signature tools
+- Choose from Line, Rectangle, Triangle, Circle, Polygon, Curve, Pencil, or Signature tools
 - Select desired color and stroke width
 
 ### 3. **Create Annotations**
@@ -112,6 +113,14 @@ npm run test:coverage
 
 - Click and drag to create shape
 - Release mouse to complete
+
+#### **🔺 Triangle Tool**
+
+- Click first point to start triangle
+- Click second point to set base
+- Click third point to complete triangle
+- Live preview with semi-transparent fill
+- Press Escape to cancel
 
 #### **Multi-point Tools (Polygon, Curve)**
 

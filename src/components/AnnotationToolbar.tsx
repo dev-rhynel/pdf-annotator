@@ -20,6 +20,7 @@ interface AnnotationToolbarProps {
 const tools = [
   { type: 'line' as AnnotationType, name: 'Line', icon: '📏' },
   { type: 'rectangle' as AnnotationType, name: 'Rectangle', icon: '⬜' },
+  { type: 'triangle' as AnnotationType, name: 'Triangle', icon: '🔺' },
   { type: 'polygon' as AnnotationType, name: 'Polygon', icon: '🔷' },
   { type: 'circle' as AnnotationType, name: 'Circle', icon: '⭕' },
   { type: 'curve' as AnnotationType, name: 'Curve', icon: '🌊' },

@@ -1,6 +1,7 @@
 export type AnnotationType =
   | 'line'
   | 'rectangle'
+  | 'triangle'
   | 'polygon'
   | 'circle'
   | 'curve'
@@ -38,6 +39,11 @@ export interface PolygonAnnotation extends Annotation {
 export interface RectangleAnnotation extends Annotation {
   type: 'rectangle'
   points: [Point, Point] // top-left and bottom-right points
+}
+
+export interface TriangleAnnotation extends Annotation {
+  type: 'triangle'
+  points: [Point, Point, Point] // three corner points
 }
 
 export interface CircleAnnotation extends Annotation {

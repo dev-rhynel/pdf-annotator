@@ -86,10 +86,13 @@ export default function SimplePDFViewer({
       requestAnimationFrame(() => renderAnnotations())
     }
 
-    // Update drawing points for line, rectangle, and circle tools during mouse movement
+    // Update drawing points for line, rectangle, circle, and triangle tools during mouse movement
     if (isDrawing && drawingPoints.length > 0) {
       if (currentTool === 'line' || currentTool === 'rectangle' || currentTool === 'circle') {
         setDrawingPoints([drawingPoints[0], { x, y }])
+      } else if (currentTool === 'triangle') {
+        // Triangle uses click-based drawing, just trigger re-render for preview
+        requestAnimationFrame(() => renderAnnotations())
       } else if (currentTool === 'polygon' || currentTool === 'curve') {
         requestAnimationFrame(() => renderAnnotations())
       }
@@ -109,6 +112,36 @@ export default function SimplePDFViewer({
     if (currentTool === 'pencil') {
       setIsPencilDrawing(true)
       setCurrentPencilPath([{ x, y }])
+      return
+    }
+
+    // Handle triangle drawing - three clicks to create triangle
+    if (currentTool === 'triangle') {
+      if (!isDrawing) {
+        // Start new triangle - first point
+        setIsDrawing(true)
+        setDrawingPoints([{ x, y }])
+        setMousePosition({ x, y })
+      } else if (drawingPoints.length === 1) {
+        // Second point
+        setDrawingPoints([drawingPoints[0], { x, y }])
+      } else if (drawingPoints.length === 2) {
+        // Third point - complete triangle
+        const annotation: Annotation = {
+          id: generateUniqueId(),
+          type: 'triangle',
+          points: [drawingPoints[0], drawingPoints[1], { x, y }],
+          color: selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000',
+          strokeWidth,
+          page: 1,
+          timestamp: Date.now(),
+        }
+        onAnnotationAdd(annotation)
+        const newAnnotations = [...annotations, annotation]
+        saveToHistory(newAnnotations)
+        setIsDrawing(false)
+        setDrawingPoints([])
+      }
       return
     }
 
@@ -211,6 +244,11 @@ export default function SimplePDFViewer({
 
     // Handle completion for line, rectangle, and circle tools
     if (isDrawing && drawingPoints.length >= 2) {
+      // Skip triangle since it uses click-based creation
+      if (currentTool === 'triangle') {
+        return
+      }
+
       if (currentTool === 'line') {
         const annotation: Annotation = {
           id: generateUniqueId(),
@@ -493,6 +531,25 @@ export default function SimplePDFViewer({
           }
           break
 
+        case 'triangle':
+          if (annotation.points.length >= 3) {
+            context.beginPath()
+            context.moveTo(annotation.points[0].x, annotation.points[0].y)
+            context.lineTo(annotation.points[1].x, annotation.points[1].y)
+            context.lineTo(annotation.points[2].x, annotation.points[2].y)
+            context.closePath()
+
+            // Fill the triangle with a semi-transparent version of the color
+            const originalAlpha = context.globalAlpha
+            context.globalAlpha = 0.3
+            context.fill()
+            context.globalAlpha = originalAlpha
+
+            // Draw the outline
+            context.stroke()
+          }
+          break
+
         case 'polygon':
           if (annotation.points.length >= 3) {
             context.beginPath()
@@ -659,6 +716,55 @@ export default function SimplePDFViewer({
       context.stroke()
     }
 
+    // Render triangle with special logic for showing points
+    if (isDrawing && currentTool === 'triangle' && drawingPoints.length >= 1) {
+      // Set color and style for preview
+      context.strokeStyle = selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000'
+      context.fillStyle = selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000'
+      context.lineWidth = strokeWidth
+      context.lineCap = 'round'
+      context.lineJoin = 'round'
+
+      // Draw points as visible dots
+      drawingPoints.forEach((point, index) => {
+        context.beginPath()
+        context.arc(point.x, point.y, 4, 0, 2 * Math.PI)
+        context.fill()
+      })
+
+      // Handle different states of triangle drawing
+      if (drawingPoints.length === 1 && mousePosition) {
+        // First point clicked, show preview line to mouse
+        context.beginPath()
+        context.moveTo(drawingPoints[0].x, drawingPoints[0].y)
+        context.lineTo(mousePosition.x, mousePosition.y)
+        context.stroke()
+      } else if (drawingPoints.length === 2) {
+        // Two points clicked, show triangle preview
+        context.beginPath()
+        context.moveTo(drawingPoints[0].x, drawingPoints[0].y)
+        context.lineTo(drawingPoints[1].x, drawingPoints[1].y)
+
+        if (mousePosition) {
+          // Show preview triangle with third point at mouse position
+          context.lineTo(mousePosition.x, mousePosition.y)
+          context.closePath()
+
+          // Semi-transparent fill
+          const originalAlpha = context.globalAlpha
+          context.globalAlpha = 0.3
+          context.fill()
+          context.globalAlpha = originalAlpha
+
+          // Draw outline
+          context.stroke()
+        } else {
+          // Just draw the line between the two points
+          context.stroke()
+        }
+      }
+    }
+
     // Render polygon and curve with special logic
     if (isDrawing && currentTool === 'polygon' && drawingPoints.length >= 1) {
       // Always show the first point as a visible dot
@@ -815,6 +921,14 @@ export default function SimplePDFViewer({
       if (currentTool === 'polygon' && isDrawing && drawingPoints.length > 0) {
         if (e.key === 'Escape') {
           // Cancel the polygon
+          setIsDrawing(false)
+          setDrawingPoints([])
+        }
+      }
+
+      if (currentTool === 'triangle' && isDrawing && drawingPoints.length > 0) {
+        if (e.key === 'Escape') {
+          // Cancel the triangle
           setIsDrawing(false)
           setDrawingPoints([])
         }
@@ -1657,7 +1771,10 @@ export default function SimplePDFViewer({
             objectFit: 'contain',
             backgroundColor: 'transparent',
             cursor:
-              isDrawing || currentTool === 'polygon' || isPencilDrawing
+              isDrawing ||
+              currentTool === 'polygon' ||
+              currentTool === 'triangle' ||
+              isPencilDrawing
                 ? 'crosshair'
                 : currentTool !== 'none'
                   ? 'pointer'
@@ -1697,6 +1814,9 @@ export default function SimplePDFViewer({
                   <span className="text-blue-600">
                     • Click to add points • Click start to complete
                   </span>
+                )}
+                {currentTool === 'triangle' && (
+                  <span className="text-blue-600">• Click 3 points to create triangle</span>
                 )}
               </>
             )}
