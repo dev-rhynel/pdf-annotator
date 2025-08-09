@@ -5,8 +5,8 @@ export const configurePDFWorker = async () => {
       // Use local worker to avoid CORS issues
       const pdfjs = await import('pdfjs-dist')
       pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
-    } catch (error) {
-      console.warn('Failed to configure PDF.js worker:', error)
+    } catch {
+      // console.warn('Failed to configure PDF.js worker')
     }
   }
 }
@@ -17,10 +17,10 @@ export const configurePDFWorkerDev = async () => {
     try {
       const pdfjs = await import('pdfjs-dist')
       // Use a more reliable CDN or local worker
-      pdfjs.GlobalWorkerOptions.workerSrc = 
+      pdfjs.GlobalWorkerOptions.workerSrc =
         'https://unpkg.com/pdfjs-dist@5.4.54/build/pdf.worker.min.js'
-    } catch (error) {
-      console.warn('Failed to configure PDF.js worker:', error)
+    } catch {
+      // console.warn('Failed to configure PDF.js worker')
     }
   }
 }

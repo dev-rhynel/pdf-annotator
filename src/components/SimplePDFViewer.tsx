@@ -1,14 +1,14 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 'use client'
 
-import {useState, useEffect, useRef} from 'react'
-import {
-  AnnotationType,
-  Annotation,
-  Point,
-  CircleAnnotation,
-  SignatureAnnotation,
-} from '@/types/annotation'
+import { useState, useEffect, useRef } from 'react'
+import { AnnotationType, Annotation, Point, CircleAnnotation } from '@/types/annotation'
 import jsPDF from 'jspdf'
+
+// Generate unique IDs for annotations
+const generateUniqueId = () => {
+  return `annotation_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+}
 
 interface SimplePDFViewerProps {
   file: File
@@ -23,8 +23,6 @@ interface SimplePDFViewerProps {
   setSelectedPolygons: React.Dispatch<React.SetStateAction<string[]>>
   selectedColor: string
   strokeWidth: number
-  selectedAnnotation: string | null
-  setSelectedAnnotation: React.Dispatch<React.SetStateAction<string | null>>
 }
 
 export default function SimplePDFViewer({
@@ -40,22 +38,213 @@ export default function SimplePDFViewer({
   setSelectedPolygons,
   selectedColor,
   strokeWidth,
-  selectedAnnotation,
-  setSelectedAnnotation,
 }: SimplePDFViewerProps) {
   const [pdfUrl, setPdfUrl] = useState<string>('')
   const [canvasContext, setCanvasContext] = useState<CanvasRenderingContext2D | null>(null)
   const [isDrawing, setIsDrawing] = useState<boolean>(false)
   const [drawingPoints, setDrawingPoints] = useState<Point[]>([])
 
-  const [longPressTimer, setLongPressTimer] = useState<NodeJS.Timeout | null>(null)
   const [mousePosition, setMousePosition] = useState<Point | null>(null)
   const [showDownloadMenu, setShowDownloadMenu] = useState<boolean>(false)
-  const [showSignatureModal, setShowSignatureModal] = useState<boolean>(false)
-
-  const [signaturePosition, setSignaturePosition] = useState<Point | null>(null)
   const [isDevMode, setIsDevMode] = useState<boolean>(false)
+
+  // Undo/Redo state management
+  const [history, setHistory] = useState<Annotation[][]>([[]])
+  const [historyIndex, setHistoryIndex] = useState<number>(0)
+
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // Mouse event handlers
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!canvasRef.current) {
+      return
+    }
+
+    const rect = canvasRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+
+    setMousePosition({ x, y })
+
+    // Update drawing points for line, rectangle, and circle tools during mouse movement
+    if (isDrawing && drawingPoints.length > 0) {
+      if (currentTool === 'line' || currentTool === 'rectangle' || currentTool === 'circle') {
+        setDrawingPoints([drawingPoints[0], { x, y }])
+      } else if (currentTool === 'polygon' || currentTool === 'curve') {
+        requestAnimationFrame(() => renderAnnotations())
+      }
+    }
+  }
+
+  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!canvasRef.current) {
+      return
+    }
+
+    const rect = canvasRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+
+    // Handle polygon differently - continuous clicking to add points
+    if (currentTool === 'polygon') {
+      if (!isDrawing) {
+        // Start new polygon
+        setIsDrawing(true)
+        setDrawingPoints([{ x, y }])
+        setMousePosition({ x, y })
+      } else {
+        // Check if clicking near the starting point to close polygon
+        const startPoint = drawingPoints[0]
+        const distance = Math.sqrt(Math.pow(x - startPoint.x, 2) + Math.pow(y - startPoint.y, 2))
+        if (distance <= 10 && drawingPoints.length >= 3) {
+          // Close polygon if clicked near start point and has at least 3 points
+          const annotation: Annotation = {
+            id: generateUniqueId(),
+            type: 'polygon',
+            points: drawingPoints,
+            color: selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000',
+            strokeWidth,
+            page: 1,
+            timestamp: Date.now(),
+          }
+          onAnnotationAdd(annotation)
+          const newAnnotations = [...annotations, annotation]
+          saveToHistory(newAnnotations)
+          setIsDrawing(false)
+          setDrawingPoints([])
+        } else {
+          // Add new point to polygon
+          setDrawingPoints([...drawingPoints, { x, y }])
+        }
+      }
+      return
+    }
+
+    // Handle curve similarly to polygon - continuous clicking to add curve points
+    if (currentTool === 'curve') {
+      if (!isDrawing) {
+        // Start new curve
+        setIsDrawing(true)
+        setDrawingPoints([{ x, y }])
+        setMousePosition({ x, y })
+      } else {
+        // Check if clicking near the starting point to close curve
+        const startPoint = drawingPoints[0]
+        const distance = Math.sqrt(Math.pow(x - startPoint.x, 2) + Math.pow(y - startPoint.y, 2))
+
+        if (distance <= 15 && drawingPoints.length >= 3) {
+          // Close curve if clicked near start point and has at least 3 points
+          const annotation: Annotation = {
+            id: generateUniqueId(),
+            type: 'curve',
+            points: drawingPoints,
+            color: selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000',
+            strokeWidth,
+            page: 1,
+            timestamp: Date.now(),
+          }
+          onAnnotationAdd(annotation)
+          const newAnnotations = [...annotations, annotation]
+          saveToHistory(newAnnotations)
+          setIsDrawing(false)
+          setDrawingPoints([])
+        } else {
+          // Add new point to curve
+          setDrawingPoints([...drawingPoints, { x, y }])
+        }
+      }
+      return
+    }
+
+    // For other tools (line, rectangle, circle), start drawing normally
+    setIsDrawing(true)
+    setDrawingPoints([{ x, y }])
+    setMousePosition({ x, y })
+  }
+
+  const handleCanvasMouseUp = () => {
+    // Handle completion for line, rectangle, and circle tools
+    if (isDrawing && drawingPoints.length >= 2) {
+      if (currentTool === 'line') {
+        const annotation: Annotation = {
+          id: generateUniqueId(),
+          type: 'line',
+          points: [drawingPoints[0], drawingPoints[1]],
+          color: selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000',
+          strokeWidth,
+          page: 1,
+          timestamp: Date.now(),
+        }
+        onAnnotationAdd(annotation)
+        const newAnnotations = [...annotations, annotation]
+        saveToHistory(newAnnotations)
+        setIsDrawing(false)
+        setDrawingPoints([])
+      } else if (currentTool === 'rectangle') {
+        const annotation: Annotation = {
+          id: generateUniqueId(),
+          type: 'rectangle',
+          points: [drawingPoints[0], drawingPoints[1]],
+          color: selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000',
+          strokeWidth,
+          page: 1,
+          timestamp: Date.now(),
+        }
+        onAnnotationAdd(annotation)
+        const newAnnotations = [...annotations, annotation]
+        saveToHistory(newAnnotations)
+        setIsDrawing(false)
+        setDrawingPoints([])
+      } else if (currentTool === 'circle') {
+        const center = drawingPoints[0]
+        const radius = Math.sqrt(
+          Math.pow(drawingPoints[1].x - center.x, 2) + Math.pow(drawingPoints[1].y - center.y, 2)
+        )
+        const annotation: CircleAnnotation = {
+          id: generateUniqueId(),
+          type: 'circle',
+          points: [center],
+          color: selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000',
+          strokeWidth,
+          page: 1,
+          timestamp: Date.now(),
+          radius,
+        }
+        onAnnotationAdd(annotation)
+        const newAnnotations = [...annotations, annotation]
+        saveToHistory(newAnnotations)
+        setIsDrawing(false)
+        setDrawingPoints([])
+      }
+    }
+  }
+
+  // Undo/Redo functions - defined early to avoid initialization issues
+  const saveToHistory = (newAnnotations: Annotation[]) => {
+    const newHistory = history.slice(0, historyIndex + 1)
+    newHistory.push([...newAnnotations])
+    setHistory(newHistory)
+    setHistoryIndex(newHistory.length - 1)
+  }
+
+  const undo = () => {
+    if (historyIndex > 0) {
+      const newIndex = historyIndex - 1
+      setHistoryIndex(newIndex)
+      onAnnotationsReplace(history[newIndex])
+    }
+  }
+
+  const redo = () => {
+    if (historyIndex < history.length - 1) {
+      const newIndex = historyIndex + 1
+      setHistoryIndex(newIndex)
+      onAnnotationsReplace(history[newIndex])
+    }
+  }
+
+  const canUndo = historyIndex > 0
+  const canRedo = historyIndex < history.length - 1
 
   useEffect(() => {
     if (file) {
@@ -149,7 +338,7 @@ export default function SimplePDFViewer({
                   `
                   iframe.contentDocument.head.appendChild(style)
                 }
-              } catch (e) {
+              } catch {
                 // Cross-origin restrictions
               }
             }, 1000)
@@ -183,22 +372,6 @@ export default function SimplePDFViewer({
           ctx.lineCap = 'round'
           ctx.lineJoin = 'round'
           setCanvasContext(ctx)
-          if (isDevMode) {
-            console.log(
-              'Canvas context set up with scale:',
-              scale,
-              'canvas size:',
-              canvas.width,
-              'x',
-              canvas.height,
-              'container rect:',
-              rect,
-              'canvas style size:',
-              canvas.style.width,
-              'x',
-              canvas.style.height
-            )
-          }
 
           // Force a re-render after canvas context is set
           setTimeout(() => {
@@ -214,19 +387,7 @@ export default function SimplePDFViewer({
   }, [])
 
   const renderAnnotations = () => {
-    if (isDevMode) {
-      console.log('🔄 renderAnnotations called:', {
-        canvasContext: !!canvasContext,
-        canvasRef: !!canvasRef.current,
-        isDrawing,
-        drawingPoints: drawingPoints.length,
-        currentTool,
-      })
-    }
     if (!canvasRef.current) {
-      if (isDevMode) {
-        console.log('Missing canvas ref')
-      }
       return
     }
 
@@ -242,16 +403,10 @@ export default function SimplePDFViewer({
         ctx.lineCap = 'round'
         ctx.lineJoin = 'round'
         setCanvasContext(ctx)
-        if (isDevMode) {
-          console.log('Recreated canvas context')
-        }
       }
     }
 
     if (!ctx) {
-      if (isDevMode) {
-        console.log('Still missing canvas context')
-      }
       return
     }
 
@@ -260,21 +415,8 @@ export default function SimplePDFViewer({
 
     // Clear canvas with proper dimensions
     const canvas = canvasRef.current
-    const rect = canvas.getBoundingClientRect()
     const scale = 2
     context.clearRect(0, 0, canvas.width / scale, canvas.height / scale)
-    if (isDevMode) {
-      console.log(
-        '🧹 Cleared canvas with dimensions:',
-        canvas.width,
-        'x',
-        canvas.height,
-        'cleared area:',
-        canvas.width / scale,
-        'x',
-        canvas.height / scale
-      )
-    }
 
     // Draw all annotations
     annotations.forEach(annotation => {
@@ -292,9 +434,6 @@ export default function SimplePDFViewer({
             context.moveTo(annotation.points[0].x, annotation.points[0].y)
             context.lineTo(annotation.points[1].x, annotation.points[1].y)
             context.stroke()
-            if (isDevMode) {
-              console.log('📏 Drawing line from', annotation.points[0], 'to', annotation.points[1])
-            }
           }
           break
 
@@ -316,6 +455,14 @@ export default function SimplePDFViewer({
               context.lineTo(annotation.points[i].x, annotation.points[i].y)
             }
             context.closePath()
+
+            // Fill the polygon with a semi-transparent version of the color
+            const originalAlpha = context.globalAlpha
+            context.globalAlpha = 0.3
+            context.fill()
+            context.globalAlpha = originalAlpha
+
+            // Draw the outline
             context.stroke()
           }
           break
@@ -331,20 +478,36 @@ export default function SimplePDFViewer({
           }
           break
 
-        case 'signature':
-          if (annotation.points.length >= 1) {
-            const signatureAnnotation = annotation as SignatureAnnotation
-            const img = new Image()
-            img.onload = () => {
-              context.drawImage(
-                img,
-                signatureAnnotation.points[0].x,
-                signatureAnnotation.points[0].y,
-                signatureAnnotation.width,
-                signatureAnnotation.height
+        case 'curve':
+          if (annotation.points.length >= 2) {
+            context.beginPath()
+            context.moveTo(annotation.points[0].x, annotation.points[0].y)
+
+            if (annotation.points.length === 2) {
+              // Simple line for two points
+              context.lineTo(annotation.points[1].x, annotation.points[1].y)
+            } else if (annotation.points.length === 3) {
+              // Quadratic curve for three points
+              context.quadraticCurveTo(
+                annotation.points[1].x,
+                annotation.points[1].y,
+                annotation.points[2].x,
+                annotation.points[2].y
               )
+            } else {
+              // Smooth curve through multiple points using quadratic curves
+              for (let i = 1; i < annotation.points.length - 1; i++) {
+                const currentPoint = annotation.points[i]
+                const nextPoint = annotation.points[i + 1]
+                const midX = (currentPoint.x + nextPoint.x) / 2
+                const midY = (currentPoint.y + nextPoint.y) / 2
+                context.quadraticCurveTo(currentPoint.x, currentPoint.y, midX, midY)
+              }
+              // Connect to the last point
+              const lastPoint = annotation.points[annotation.points.length - 1]
+              context.lineTo(lastPoint.x, lastPoint.y)
             }
-            img.src = signatureAnnotation.signatureData
+            context.stroke()
           }
           break
       }
@@ -352,11 +515,8 @@ export default function SimplePDFViewer({
 
     // Draw current drawing
     if (isDrawing && drawingPoints.length > 1) {
-      if (isDevMode) {
-        console.log('Drawing current shape:', {currentTool, drawingPoints})
-      }
-      context.strokeStyle = selectedColor
-      context.fillStyle = selectedColor
+      context.strokeStyle = selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000'
+      context.fillStyle = selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000'
       context.lineWidth = strokeWidth
       context.lineCap = 'round'
       context.lineJoin = 'round'
@@ -377,19 +537,6 @@ export default function SimplePDFViewer({
           context.strokeRect(x, y, width, height)
           break
 
-        case 'polygon':
-          context.beginPath()
-          context.moveTo(drawingPoints[0].x, drawingPoints[0].y)
-          for (let i = 1; i < drawingPoints.length; i++) {
-            context.lineTo(drawingPoints[i].x, drawingPoints[i].y)
-          }
-          // Show preview line to mouse position if we're drawing a polygon
-          if (isDrawing && mousePosition) {
-            context.lineTo(mousePosition.x, mousePosition.y)
-          }
-          context.stroke()
-          break
-
         case 'circle':
           if (drawingPoints.length >= 2) {
             const centerX = drawingPoints[0].x
@@ -397,14 +544,7 @@ export default function SimplePDFViewer({
             const radius = Math.sqrt(
               Math.pow(drawingPoints[1].x - centerX, 2) + Math.pow(drawingPoints[1].y - centerY, 2)
             )
-            if (isDevMode) {
-              console.log('🔵 Drawing circle:', {
-                center: {x: centerX, y: centerY},
-                secondPoint: drawingPoints[1],
-                radius,
-                drawingPoints,
-              })
-            }
+
             context.beginPath()
             context.arc(centerX, centerY, radius, 0, 2 * Math.PI)
             context.stroke()
@@ -412,19 +552,131 @@ export default function SimplePDFViewer({
           break
       }
     }
+
+    // Render polygon and curve with special logic
+    if (isDrawing && currentTool === 'polygon' && drawingPoints.length >= 1) {
+      // Always show the first point as a visible dot
+      context.beginPath()
+      context.arc(drawingPoints[0].x, drawingPoints[0].y, 3, 0, 2 * Math.PI)
+      context.fill()
+
+      // Draw polygon outline if we have points
+      if (drawingPoints.length >= 1) {
+        context.beginPath()
+        context.moveTo(drawingPoints[0].x, drawingPoints[0].y)
+
+        // Draw all completed segments
+        for (let i = 1; i < drawingPoints.length; i++) {
+          context.lineTo(drawingPoints[i].x, drawingPoints[i].y)
+        }
+
+        // Show preview line to mouse position when drawing
+        if (
+          mousePosition &&
+          !(mousePosition.x === drawingPoints[0].x && mousePosition.y === drawingPoints[0].y)
+        ) {
+          context.lineTo(mousePosition.x, mousePosition.y)
+
+          // Show fill preview when we have enough points
+          if (drawingPoints.length >= 1) {
+            // Save current path for fill
+            context.save()
+            context.closePath()
+            const originalAlpha = context.globalAlpha
+            context.globalAlpha = 0.3
+            context.fill()
+            context.globalAlpha = originalAlpha
+            context.restore()
+
+            // Restart path for stroke
+            context.beginPath()
+            context.moveTo(drawingPoints[0].x, drawingPoints[0].y)
+            for (let i = 1; i < drawingPoints.length; i++) {
+              context.lineTo(drawingPoints[i].x, drawingPoints[i].y)
+            }
+            context.lineTo(mousePosition.x, mousePosition.y)
+          }
+        }
+        context.stroke()
+      }
+    }
+
+    if (isDrawing && currentTool === 'curve' && drawingPoints.length >= 1) {
+      // Always show the first point as a visible dot
+      context.beginPath()
+      context.arc(drawingPoints[0].x, drawingPoints[0].y, 3, 0, 2 * Math.PI)
+      context.fill()
+
+      // Draw curve
+      context.beginPath()
+      context.moveTo(drawingPoints[0].x, drawingPoints[0].y)
+
+      if (drawingPoints.length === 1) {
+        // Just the starting point, show preview line to mouse
+        if (
+          mousePosition &&
+          !(mousePosition.x === drawingPoints[0].x && mousePosition.y === drawingPoints[0].y)
+        ) {
+          context.lineTo(mousePosition.x, mousePosition.y)
+        }
+      } else if (drawingPoints.length === 2) {
+        // Simple line for two points
+        context.lineTo(drawingPoints[1].x, drawingPoints[1].y)
+        // Show preview to mouse position
+        if (mousePosition) {
+          context.lineTo(mousePosition.x, mousePosition.y)
+        }
+      } else if (drawingPoints.length === 3) {
+        // Quadratic curve for three points
+        context.quadraticCurveTo(
+          drawingPoints[1].x,
+          drawingPoints[1].y,
+          drawingPoints[2].x,
+          drawingPoints[2].y
+        )
+        // Show preview curve to mouse position
+        if (mousePosition) {
+          const lastPoint = drawingPoints[drawingPoints.length - 1]
+          const midX = (lastPoint.x + mousePosition.x) / 2
+          const midY = (lastPoint.y + mousePosition.y) / 2
+          context.quadraticCurveTo(lastPoint.x, lastPoint.y, midX, midY)
+          context.lineTo(mousePosition.x, mousePosition.y)
+        }
+      } else {
+        // Smooth curve through multiple points using quadratic curves
+        for (let i = 1; i < drawingPoints.length - 1; i++) {
+          const currentPoint = drawingPoints[i]
+          const nextPoint = drawingPoints[i + 1]
+          const midX = (currentPoint.x + nextPoint.x) / 2
+          const midY = (currentPoint.y + nextPoint.y) / 2
+          context.quadraticCurveTo(currentPoint.x, currentPoint.y, midX, midY)
+        }
+        // Connect to the last point
+        const lastPoint = drawingPoints[drawingPoints.length - 1]
+        context.lineTo(lastPoint.x, lastPoint.y)
+
+        // Show preview curve to mouse position
+        if (mousePosition) {
+          const midX = (lastPoint.x + mousePosition.x) / 2
+          const midY = (lastPoint.y + mousePosition.y) / 2
+          context.quadraticCurveTo(lastPoint.x, lastPoint.y, midX, midY)
+          context.lineTo(mousePosition.x, mousePosition.y)
+        }
+      }
+      context.stroke()
+    }
   }
 
+  // Initialize history with current annotations
   useEffect(() => {
-    if (isDevMode) {
-      console.log('renderAnnotations useEffect triggered:', {
-        canvasContext: !!canvasContext,
-        canvasRef: !!canvasRef.current,
-        isDrawing,
-        drawingPoints: drawingPoints.length,
-      })
+    if (annotations.length > 0 && history.length === 1 && history[0].length === 0) {
+      setHistory([annotations])
+      setHistoryIndex(0)
     }
+  }, [annotations, history])
+
+  useEffect(() => {
     renderAnnotations()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     annotations,
     canvasContext,
@@ -437,9 +689,21 @@ export default function SimplePDFViewer({
     strokeWidth,
   ])
 
-  // Handle keyboard events for polygon completion
+  // Handle keyboard events for polygon completion and undo/redo
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Undo/Redo shortcuts
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        undo()
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault()
+        redo()
+        return
+      }
+
       if (currentTool === 'polygon' && isDrawing && drawingPoints.length > 0) {
         if (e.key === 'Escape') {
           // Cancel the polygon
@@ -451,291 +715,7 @@ export default function SimplePDFViewer({
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [currentTool, isDrawing, drawingPoints])
-
-  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isDevMode) {
-      console.log('🖱️ MOUSE DOWN EVENT TRIGGERED')
-    }
-    if (!canvasRef.current) {
-      if (isDevMode) {
-        console.log('❌ Canvas ref not available')
-      }
-      return
-    }
-
-    const rect = canvasRef.current.getBoundingClientRect()
-    // Canvas is scaled by 2x, so we need to convert mouse coordinates to logical coordinates
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
-
-    if (isDevMode) {
-      console.log('🖱️ Mouse down:', {
-        x,
-        y,
-        currentTool,
-        isDrawing,
-        rect: {left: rect.left, top: rect.top},
-        clientX: e.clientX,
-        clientY: e.clientY,
-        scale: 2,
-        rawX: e.clientX - rect.left,
-        rawY: e.clientY - rect.top,
-      })
-    }
-
-    if (isDevMode) {
-      console.log('🎨 Starting drawing with tool:', currentTool)
-    }
-
-    // Handle polygon differently - continuous clicking to add points
-    if (currentTool === 'polygon') {
-      if (!isDrawing) {
-        // Start new polygon
-        setIsDrawing(true)
-        setDrawingPoints([{x, y}])
-        if (isDevMode) {
-          console.log('✅ Started new polygon with point:', {x, y})
-        }
-      } else {
-        // Add point to existing polygon
-        const distance = Math.sqrt(
-          Math.pow(x - drawingPoints[0].x, 2) + Math.pow(y - drawingPoints[0].y, 2)
-        )
-        if (distance <= 10 && drawingPoints.length >= 3) {
-          // Close polygon if clicked near start point and has at least 3 points
-          const annotation: Annotation = {
-            id: Date.now().toString(),
-            type: 'polygon',
-            points: drawingPoints,
-            color: selectedColor,
-            strokeWidth,
-            page: 1,
-            timestamp: Date.now(),
-          }
-          onAnnotationAdd(annotation)
-          setIsDrawing(false)
-          setDrawingPoints([])
-          if (isDevMode) {
-            console.log('✅ Completed polygon with points:', drawingPoints)
-          }
-        } else {
-          // Add new point to polygon
-          setDrawingPoints([...drawingPoints, {x, y}])
-          if (isDevMode) {
-            console.log(
-              '✅ Added point to polygon:',
-              {x, y},
-              'total points:',
-              drawingPoints.length + 1
-            )
-          }
-        }
-      }
-      return
-    }
-
-    // For other tools, start drawing normally
-    setIsDrawing(true)
-    setDrawingPoints([{x, y}])
-    if (isDevMode) {
-      console.log('✅ Set isDrawing=true, drawingPoints=[{x, y}]')
-    }
-
-    if (currentTool === 'signature') {
-      if (isDevMode) {
-        console.log('Signature tool selected, showing signature modal')
-      }
-      setSignaturePosition({x, y})
-      setShowSignatureModal(true)
-      setIsDrawing(false)
-      return
-    }
-
-    // Start long press timer for circle tool
-    if (currentTool === 'circle') {
-      const timer = setTimeout(() => {
-        if (isDrawing && drawingPoints.length === 1) {
-          // Create perfect circle
-          const center = drawingPoints[0]
-          const radius = Math.sqrt(Math.pow(x - center.x, 2) + Math.pow(y - center.y, 2))
-          if (isDevMode) {
-            console.log('🔵 Circle long press:', {
-              center,
-              currentMouse: {x, y},
-              radius,
-              drawingPoints,
-            })
-          }
-          const annotation: CircleAnnotation = {
-            id: Date.now().toString(),
-            type: 'circle',
-            points: [center],
-            color: selectedColor,
-            strokeWidth,
-            page: 1,
-            timestamp: Date.now(),
-            radius,
-          }
-          onAnnotationAdd(annotation)
-          setIsDrawing(false)
-          setDrawingPoints([])
-        }
-      }, 500)
-      setLongPressTimer(timer)
-    }
-  }
-
-  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isDevMode) {
-      console.log('🖱️ MOUSE MOVE EVENT TRIGGERED')
-    }
-    if (!canvasRef.current) {
-      if (isDevMode) {
-        console.log('Canvas ref not available for mouse move')
-      }
-      return
-    }
-
-    const rect = canvasRef.current.getBoundingClientRect()
-    // Canvas is scaled by 2x, so we need to convert mouse coordinates to logical coordinates
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
-
-    setMousePosition({x, y})
-
-    // Handle drawing
-    if (isDrawing && drawingPoints.length > 0) {
-      if (isDevMode) {
-        console.log('🎨 Drawing:', {x, y, drawingPoints: drawingPoints.length, currentTool})
-      }
-
-      // For rectangle, circle, and line, keep the first point and add current position as second point
-      let newPoints: Point[]
-      if (currentTool === 'rectangle' || currentTool === 'circle' || currentTool === 'line') {
-        newPoints = [drawingPoints[0], {x, y}]
-        if (currentTool === 'circle' && isDevMode) {
-          console.log('🔵 Circle drawing points:', {
-            firstPoint: drawingPoints[0],
-            currentPoint: {x, y},
-            newPoints,
-          })
-        }
-        if (isDevMode) {
-          console.log('📝 New drawing points:', newPoints)
-        }
-        setDrawingPoints(newPoints)
-      }
-      // For polygon, we don't update drawingPoints during mouse move, just store mouse position for preview
-
-      // Force immediate re-render for drawing
-      setTimeout(() => {
-        if (isDevMode) {
-          console.log('🔄 Forcing renderAnnotations()')
-        }
-        renderAnnotations()
-      }, 10)
-    }
-  }
-
-  const handleCanvasMouseUp = () => {
-    if (isDevMode) {
-      console.log('Mouse up:', {currentTool})
-    }
-
-    // Handle drawing completion
-    if (isDevMode) {
-      console.log('🎨 Mouse up - drawing completion:', {
-        isDrawing,
-        drawingPoints: drawingPoints.length,
-        currentTool,
-      })
-    }
-    if (isDrawing && drawingPoints.length > 0) {
-      if (isDevMode) {
-        console.log('✅ Completing drawing with tool:', currentTool, 'points:', drawingPoints)
-      }
-      if (currentTool === 'line' && drawingPoints.length >= 2) {
-        const annotation: Annotation = {
-          id: Date.now().toString(),
-          type: 'line',
-          points: [drawingPoints[0], drawingPoints[1]],
-          color: selectedColor,
-          strokeWidth,
-          page: 1,
-          timestamp: Date.now(),
-        }
-        onAnnotationAdd(annotation)
-        setIsDrawing(false)
-        setDrawingPoints([])
-      } else if (currentTool === 'rectangle' && drawingPoints.length >= 2) {
-        const annotation: Annotation = {
-          id: Date.now().toString(),
-          type: 'rectangle',
-          points: [drawingPoints[0], drawingPoints[1]],
-          color: selectedColor,
-          strokeWidth,
-          page: 1,
-          timestamp: Date.now(),
-        }
-        onAnnotationAdd(annotation)
-        setIsDrawing(false)
-        setDrawingPoints([])
-      } else if (currentTool === 'polygon') {
-        // For polygon, points are added in mouse down, don't complete here
-        return
-      } else if (currentTool === 'circle' && drawingPoints.length >= 2) {
-        const center = drawingPoints[0]
-        const radius = Math.sqrt(
-          Math.pow(drawingPoints[1].x - center.x, 2) + Math.pow(drawingPoints[1].y - center.y, 2)
-        )
-        if (isDevMode) {
-          console.log('🔵 Circle completion:', {
-            center,
-            secondPoint: drawingPoints[1],
-            radius,
-            drawingPoints,
-          })
-        }
-        const annotation: CircleAnnotation = {
-          id: Date.now().toString(),
-          type: 'circle',
-          points: [center],
-          color: selectedColor,
-          strokeWidth,
-          page: 1,
-          timestamp: Date.now(),
-          radius,
-        }
-        onAnnotationAdd(annotation)
-        setIsDrawing(false)
-        setDrawingPoints([])
-      }
-    }
-
-    // Clear long press timer
-    if (longPressTimer) {
-      clearTimeout(longPressTimer)
-      setLongPressTimer(null)
-    }
-  }
-
-  // Helper function to check if a point is inside a polygon
-  const isPointInPolygon = (point: Point, polygon: Point[]): boolean => {
-    let inside = false
-    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-      if (
-        polygon[i].y > point.y !== polygon[j].y > point.y &&
-        point.x <
-          ((polygon[j].x - polygon[i].x) * (point.y - polygon[i].y)) /
-            (polygon[j].y - polygon[i].y) +
-            polygon[i].x
-      ) {
-        inside = !inside
-      }
-    }
-    return inside
-  }
+  }, [currentTool, isDrawing, drawingPoints, undo, redo])
 
   // Function to merge selected polygons
   const mergeSelectedPolygons = () => {
@@ -755,10 +735,10 @@ export default function SimplePDFViewer({
 
     // Create merged polygon
     const mergedPolygon: Annotation = {
-      id: Date.now().toString(),
+      id: generateUniqueId(),
       type: 'polygon',
       points: allPoints,
-      color: selectedColor,
+      color: selectedColor || '#000000',
       strokeWidth: strokeWidth,
       page: 1,
       timestamp: Date.now(),
@@ -780,154 +760,9 @@ export default function SimplePDFViewer({
 
     const newAnnotations = annotations.filter(ann => !allSelected.includes(ann.id))
     onAnnotationsReplace(newAnnotations)
+    saveToHistory(newAnnotations)
     setSelectedAnnotations([])
     setSelectedPolygons([])
-  }
-
-  // Function to find annotation at a specific point
-  const findAnnotationAtPoint = (point: Point): Annotation | null => {
-    if (isDevMode) {
-      console.log('🔍 Finding annotation at point:', point)
-    }
-    return (
-      annotations.find(ann => {
-        if (ann.type === 'polygon') {
-          return isPointInPolygon(point, ann.points)
-        } else if (ann.type === 'rectangle') {
-          if (ann.points.length >= 2) {
-            const rectX = Math.min(ann.points[0].x, ann.points[1].x)
-            const rectY = Math.min(ann.points[0].y, ann.points[1].y)
-            const rectWidth = Math.abs(ann.points[1].x - ann.points[0].x)
-            const rectHeight = Math.abs(ann.points[1].y - ann.points[0].y)
-            const hit =
-              point.x >= rectX &&
-              point.x <= rectX + rectWidth &&
-              point.y >= rectY &&
-              point.y <= rectY + rectHeight
-            if (hit && isDevMode) console.log('✅ Hit rectangle annotation:', ann.id)
-            return hit
-          }
-        } else if (ann.type === 'circle') {
-          if (ann.points.length >= 1) {
-            const centerX = ann.points[0].x
-            const centerY = ann.points[0].y
-            const radius = (ann as CircleAnnotation).radius || 20 // Default radius if not set
-            const distance = Math.sqrt(
-              Math.pow(point.x - centerX, 2) + Math.pow(point.y - centerY, 2)
-            )
-            const hit = distance <= radius
-            if (hit && isDevMode)
-              console.log(
-                '✅ Hit circle annotation:',
-                ann.id,
-                'distance:',
-                distance,
-                'radius:',
-                radius
-              )
-            return hit
-          }
-        } else if (ann.type === 'line') {
-          if (ann.points.length >= 2) {
-            const tolerance = 5 // Click tolerance for line selection
-            const x1 = ann.points[0].x
-            const y1 = ann.points[0].y
-            const x2 = ann.points[1].x
-            const y2 = ann.points[1].y
-            const distance =
-              Math.abs((y2 - y1) * point.x - (x2 - x1) * point.y + x2 * y1 - y2 * x1) /
-              Math.sqrt(Math.pow(y2 - y1, 2) + Math.pow(x2 - x1, 2))
-            const hit = distance <= tolerance
-            if (hit && isDevMode)
-              console.log(
-                '✅ Hit line annotation:',
-                ann.id,
-                'distance:',
-                distance,
-                'tolerance:',
-                tolerance
-              )
-            return hit
-          }
-        } else if (ann.type === 'signature') {
-          if (ann.points.length >= 1) {
-            const signatureAnnotation = ann as SignatureAnnotation
-            const signatureX = ann.points[0].x
-            const signatureY = ann.points[0].y
-            const tolerance =
-              Math.max(signatureAnnotation.width || 200, signatureAnnotation.height || 100) / 2
-            const hit =
-              point.x >= signatureX &&
-              point.x <= signatureX + (signatureAnnotation.width || 200) &&
-              point.y >= signatureY &&
-              point.y <= signatureY + (signatureAnnotation.height || 100)
-            if (hit && isDevMode) console.log('✅ Hit signature annotation:', ann.id)
-            return hit
-          }
-        }
-        return false
-      }) || null
-    )
-  }
-
-  // Function to download the PDF with annotations
-  const downloadPDF = () => {
-    if (!pdfUrl || !canvasRef.current) return
-
-    // Create a temporary canvas to combine PDF and annotations
-    const tempCanvas = document.createElement('canvas')
-    const tempCtx = tempCanvas.getContext('2d')
-    if (!tempCtx) return
-
-    // Set canvas size to match the original
-    tempCanvas.width = canvasRef.current.width
-    tempCanvas.height = canvasRef.current.height
-
-    // First, we need to capture the PDF as an image
-    // For now, we'll create a PDF with just the annotations
-    // In a real implementation, you'd need to render the PDF to canvas first
-
-    // Draw the annotations
-    tempCtx.drawImage(canvasRef.current, 0, 0)
-
-    // Convert canvas to image
-    tempCanvas.toBlob(blob => {
-      if (blob) {
-        const img = new Image()
-        img.src = URL.createObjectURL(blob)
-
-        img.onload = () => {
-          const doc = new jsPDF('p', 'mm', 'a4')
-          const pageWidth = doc.internal.pageSize.getWidth()
-          const pageHeight = doc.internal.pageSize.getHeight()
-
-          // Calculate image dimensions to fit the page
-          const imgWidth = img.width
-          const imgHeight = img.height
-          const ratio = Math.min(pageWidth / imgWidth, pageHeight / imgHeight)
-          const newWidth = imgWidth * ratio
-          const newHeight = imgHeight * ratio
-
-          const margin = 10 // Margin in mm
-          const imgX = (pageWidth - newWidth) / 2
-          const imgY = (pageHeight - newHeight) / 2
-
-          // Add the image with annotations
-          console.log('Adding image to PDF...')
-          doc.addImage(img, 'PNG', imgX, imgY, newWidth, newHeight)
-
-          // Add metadata
-          doc.setFontSize(10)
-          doc.text(`Annotations: ${annotations.length}`, margin, pageHeight - 25)
-          doc.text(`File: ${file.name}`, margin, pageHeight - 20)
-          doc.text(`Date: ${new Date().toLocaleDateString()}`, margin, pageHeight - 15)
-
-          console.log('Saving PDF...')
-          doc.save(`${file.name || 'annotated-document'}.pdf`)
-          URL.revokeObjectURL(img.src)
-        }
-      }
-    }, 'image/png')
   }
 
   // Function to download the PDF with annotations as image
@@ -942,10 +777,6 @@ export default function SimplePDFViewer({
     // Set canvas size to match the original
     tempCanvas.width = canvasRef.current.width
     tempCanvas.height = canvasRef.current.height
-
-    // First, we need to capture the PDF as an image
-    // For now, we'll just download the annotations as an image
-    // In a real implementation, you'd need to render the PDF to canvas first
 
     // Draw the annotations
     tempCtx.drawImage(canvasRef.current, 0, 0)
@@ -975,7 +806,7 @@ export default function SimplePDFViewer({
     }
 
     const dataStr = JSON.stringify(annotationsData, null, 2)
-    const dataBlob = new Blob([dataStr], {type: 'application/json'})
+    const dataBlob = new Blob([dataStr], { type: 'application/json' })
     const url = URL.createObjectURL(dataBlob)
 
     const link = document.createElement('a')
@@ -987,56 +818,6 @@ export default function SimplePDFViewer({
     URL.revokeObjectURL(url)
   }
 
-  // Function to test basic PDF download functionality
-  const testDownload = () => {
-    if (isDevMode) {
-      console.log('Testing basic PDF download...')
-      console.log('Browser info:', navigator.userAgent)
-      console.log('jsPDF available:', typeof jsPDF !== 'undefined')
-    }
-
-    try {
-      const doc = new jsPDF('p', 'mm', 'a4')
-      if (isDevMode) {
-        console.log('jsPDF instance created successfully')
-      }
-
-      doc.setFontSize(16)
-      doc.text('Test PDF Download', 20, 30)
-      doc.setFontSize(12)
-      doc.text('This is a test to verify PDF download works.', 20, 50)
-      doc.text(`File: ${file.name}`, 20, 70)
-      doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 90)
-      doc.text(`Annotations: ${annotations.length}`, 20, 110)
-
-      if (isDevMode) {
-        console.log('About to save PDF...')
-      }
-      doc.save('test-download.pdf')
-      if (isDevMode) {
-        console.log('Test PDF save() called successfully')
-      }
-
-      // Check if download was triggered
-      setTimeout(() => {
-        if (isDevMode) {
-          console.log('Download check: If you see this message, the save() call completed')
-        }
-      }, 1000)
-    } catch (error) {
-      if (isDevMode) {
-        console.error('Test PDF download failed:', error)
-        if (error instanceof Error) {
-          console.error('Error details:', {
-            name: error.name,
-            message: error.message,
-            stack: error.stack,
-          })
-        }
-      }
-    }
-  }
-
   // Function to capture PDF iframe and combine with annotations
   const capturePDFWithAnnotations = async () => {
     if (!pdfUrl || !canvasRef.current) {
@@ -1046,21 +827,11 @@ export default function SimplePDFViewer({
       return
     }
 
-    if (isDevMode) {
-      console.log('Starting PDF capture with annotations...')
-      console.log('PDF URL:', pdfUrl)
-      console.log('Canvas ref:', canvasRef.current)
-      console.log('Annotations count:', annotations.length)
-    }
-
     try {
       // Create a temporary canvas to combine PDF and annotations
       const tempCanvas = document.createElement('canvas')
       const tempCtx = tempCanvas.getContext('2d')
       if (!tempCtx) {
-        if (isDevMode) {
-          console.error('Could not get temporary canvas context')
-        }
         createFallbackPDF()
         return
       }
@@ -1068,14 +839,6 @@ export default function SimplePDFViewer({
       // Set canvas size to match the original
       tempCanvas.width = canvasRef.current.width
       tempCanvas.height = canvasRef.current.height
-      if (isDevMode) {
-        console.log(
-          'Temporary canvas created with dimensions:',
-          tempCanvas.width,
-          'x',
-          tempCanvas.height
-        )
-      }
 
       // Create white background for the final output
       tempCtx.fillStyle = '#ffffff'
@@ -1086,45 +849,23 @@ export default function SimplePDFViewer({
 
       // Try to render PDF directly using PDF.js
       try {
-        if (isDevMode) {
-          console.log('Attempting PDF.js rendering...')
-        }
         const pdfjsLib = await import('pdfjs-dist')
         pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
 
-        if (isDevMode) {
-          console.log('Loading PDF document...')
-        }
         // Load the PDF
         const loadingTask = pdfjsLib.getDocument(pdfUrl)
         const pdf = await loadingTask.promise
-        if (isDevMode) {
-          console.log('PDF loaded successfully, pages:', pdf.numPages)
-        }
 
         // Get the first page
         const page = await pdf.getPage(1)
-        if (isDevMode) {
-          console.log('Page 1 loaded, dimensions:', page.getViewport({scale: 1}))
-        }
 
         // Calculate viewport to fit the canvas
-        const viewport = page.getViewport({scale: 1})
+        const viewport = page.getViewport({ scale: 1 })
         const scale = Math.min(
           tempCanvas.width / viewport.width,
           tempCanvas.height / viewport.height
         )
-        const scaledViewport = page.getViewport({scale})
-        if (isDevMode) {
-          console.log(
-            'Calculated scale:',
-            scale,
-            'viewport size:',
-            scaledViewport.width,
-            'x',
-            scaledViewport.height
-          )
-        }
+        const scaledViewport = page.getViewport({ scale })
 
         // Create a temporary canvas for PDF rendering
         const pdfCanvas = document.createElement('canvas')
@@ -1141,13 +882,7 @@ export default function SimplePDFViewer({
           canvas: pdfCanvas,
         }
 
-        if (isDevMode) {
-          console.log('Rendering PDF page to canvas...')
-        }
         await page.render(renderContext).promise
-        if (isDevMode) {
-          console.log('PDF page rendered successfully')
-        }
 
         // Calculate centering offset
         const offsetX = (tempCanvas.width - pdfCanvas.width) / 2
@@ -1155,14 +890,8 @@ export default function SimplePDFViewer({
 
         // Draw the PDF content centered on the temp canvas
         tempCtx.drawImage(pdfCanvas, offsetX, offsetY)
-        if (isDevMode) {
-          console.log('PDF content drawn to temp canvas at offset:', offsetX, offsetY)
-        }
 
         pdfRendered = true
-        if (isDevMode) {
-          console.log('Successfully rendered PDF to canvas')
-        }
       } catch (pdfError) {
         if (isDevMode) {
           console.error('PDF.js rendering failed:', pdfError)
@@ -1172,9 +901,6 @@ export default function SimplePDFViewer({
         const currentIframe = document.querySelector('iframe') as HTMLIFrameElement
         if (currentIframe) {
           try {
-            if (isDevMode) {
-              console.log('Trying iframe capture...')
-            }
             await new Promise(resolve => setTimeout(resolve, 1000)) // Wait for iframe to be ready
 
             const html2canvas = (await import('html2canvas')).default
@@ -1203,9 +929,7 @@ export default function SimplePDFViewer({
             // Draw the PDF content first
             if (tempCtx) {
               tempCtx.drawImage(pdfCanvas, 0, 0, tempCanvas.width, tempCanvas.height)
-              if (isDevMode) {
-                console.log('Iframe capture successful')
-              }
+
               pdfRendered = true
             }
           } catch (error) {
@@ -1217,9 +941,6 @@ export default function SimplePDFViewer({
             const container = containerRef.current
             if (container && tempCtx) {
               try {
-                if (isDevMode) {
-                  console.log('Trying container capture...')
-                }
                 const html2canvas = (await import('html2canvas')).default
 
                 const containerCanvas = await html2canvas(container as HTMLElement, {
@@ -1237,9 +958,7 @@ export default function SimplePDFViewer({
                 // Draw the container content
                 if (tempCtx) {
                   tempCtx.drawImage(containerCanvas, 0, 0, tempCanvas.width, tempCanvas.height)
-                  if (isDevMode) {
-                    console.log('Container capture successful')
-                  }
+
                   pdfRendered = true
                 }
               } catch (containerError) {
@@ -1255,9 +974,6 @@ export default function SimplePDFViewer({
 
       // If PDF wasn't rendered by alternative method, draw annotations only
       if (!pdfRendered) {
-        if (isDevMode) {
-          console.log('Using fallback method - drawing annotations only...')
-        }
         // Now draw annotations with transparency on top
         if (tempCtx && canvasRef.current) {
           tempCtx.globalAlpha = 0.8
@@ -1265,9 +981,6 @@ export default function SimplePDFViewer({
           tempCtx.globalAlpha = 1.0
         }
       } else {
-        if (isDevMode) {
-          console.log('PDF was rendered successfully, drawing annotations on top...')
-        }
         // Draw annotations with transparency on top of the rendered PDF
         if (tempCtx && canvasRef.current) {
           tempCtx.globalAlpha = 0.8
@@ -1277,22 +990,14 @@ export default function SimplePDFViewer({
       }
 
       // Convert canvas to PNG image (regardless of whether PDF was rendered or not)
-      if (isDevMode) {
-        console.log('Converting canvas to blob...')
-      }
+
       tempCanvas.toBlob(
         blob => {
           if (blob) {
-            if (isDevMode) {
-              console.log('Blob created successfully, size:', blob.size)
-            }
             const img = new Image()
             img.src = URL.createObjectURL(blob)
 
             img.onload = () => {
-              if (isDevMode) {
-                console.log('Image loaded, dimensions:', img.width, 'x', img.height)
-              }
               const doc = new jsPDF('p', 'mm', 'a4')
               const pageWidth = doc.internal.pageSize.getWidth()
               const pageHeight = doc.internal.pageSize.getHeight()
@@ -1309,9 +1014,7 @@ export default function SimplePDFViewer({
               const imgY = (pageHeight - newHeight) / 2
 
               // Add the image with PDF content and annotations
-              if (isDevMode) {
-                console.log('Adding image to PDF...')
-              }
+
               doc.addImage(img, 'PNG', imgX, imgY, newWidth, newHeight)
 
               // Add metadata
@@ -1320,14 +1023,9 @@ export default function SimplePDFViewer({
               doc.text(`File: ${file.name}`, margin, pageHeight - 20)
               doc.text(`Date: ${new Date().toLocaleDateString()}`, margin, pageHeight - 15)
 
-              if (isDevMode) {
-                console.log('Saving PDF...')
-              }
               doc.save(`${file.name || 'annotated-document'}.pdf`)
               downloadTriggered = true
-              if (isDevMode) {
-                console.log('PDF saved successfully')
-              }
+
               URL.revokeObjectURL(img.src)
             }
             img.onerror = error => {
@@ -1350,9 +1048,6 @@ export default function SimplePDFViewer({
       // Wait a bit to see if the download was triggered
       await new Promise(resolve => setTimeout(resolve, 3000))
       if (!downloadTriggered) {
-        if (isDevMode) {
-          console.log('Download was not triggered, using fallback...')
-        }
         createFallbackPDF()
       }
     } catch (error) {
@@ -1423,66 +1118,6 @@ export default function SimplePDFViewer({
     }, 'image/png')
   }
 
-  // Initialize signature canvas when modal opens
-  useEffect(() => {
-    if (showSignatureModal) {
-      const canvas = document.getElementById('signatureCanvas') as HTMLCanvasElement
-      if (canvas) {
-        const ctx = canvas.getContext('2d')
-        if (ctx) {
-          canvas.width = canvas.offsetWidth
-          canvas.height = canvas.offsetHeight
-          ctx.strokeStyle = selectedColor
-          ctx.lineWidth = strokeWidth
-          ctx.lineCap = 'round'
-          ctx.lineJoin = 'round'
-
-          let isDrawing = false
-          let lastX = 0
-          let lastY = 0
-
-          const startDrawing = (e: MouseEvent) => {
-            isDrawing = true
-            const rect = canvas.getBoundingClientRect()
-            lastX = e.clientX - rect.left
-            lastY = e.clientY - rect.top
-          }
-
-          const draw = (e: MouseEvent) => {
-            if (!isDrawing) return
-            const rect = canvas.getBoundingClientRect()
-            const x = e.clientX - rect.left
-            const y = e.clientY - rect.top
-
-            ctx.beginPath()
-            ctx.moveTo(lastX, lastY)
-            ctx.lineTo(x, y)
-            ctx.stroke()
-
-            lastX = x
-            lastY = y
-          }
-
-          const stopDrawing = () => {
-            isDrawing = false
-          }
-
-          canvas.addEventListener('mousedown', startDrawing)
-          canvas.addEventListener('mousemove', draw)
-          canvas.addEventListener('mouseup', stopDrawing)
-          canvas.addEventListener('mouseout', stopDrawing)
-
-          return () => {
-            canvas.removeEventListener('mousedown', startDrawing)
-            canvas.removeEventListener('mousemove', draw)
-            canvas.removeEventListener('mouseup', stopDrawing)
-            canvas.removeEventListener('mouseout', stopDrawing)
-          }
-        }
-      }
-    }
-  }, [showSignatureModal, selectedColor, strokeWidth])
-
   // Handle clicking outside download menu to close it
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -1498,172 +1133,22 @@ export default function SimplePDFViewer({
     }
   }, [showDownloadMenu])
 
-  // Add debug useEffect to track state changes
+  // Deselect all annotations when a drawing tool becomes active
   useEffect(() => {
-    if (isDevMode) {
-      console.log('🔍 DEBUG - State changed:', {
-        currentTool,
-        isDrawing,
-        drawingPoints: drawingPoints.length,
-        canvasContext: !!canvasContext,
-        canvasRef: !!canvasRef.current,
-      })
-    }
-  }, [currentTool, isDrawing, drawingPoints, canvasContext, canvasRef])
-
-  // Add test function to verify canvas drawing
-  const testCanvasDrawing = () => {
-    if (!canvasRef.current) {
-      if (isDevMode) {
-        console.log('❌ Test failed: No canvas ref')
-      }
-      return
-    }
-
-    const ctx = canvasRef.current.getContext('2d')
-    if (!ctx) {
-      if (isDevMode) {
-        console.log('❌ Test failed: No canvas context')
-      }
-      return
-    }
-
-    if (isDevMode) {
-      console.log('✅ Testing canvas drawing...')
-    }
-
-    // Test drawing a red rectangle
-    ctx.fillStyle = 'red'
-    ctx.fillRect(50, 50, 100, 100)
-
-    // Test drawing a blue circle
-    ctx.strokeStyle = 'blue'
-    ctx.lineWidth = 3
-    ctx.beginPath()
-    ctx.arc(200, 200, 50, 0, 2 * Math.PI)
-    ctx.stroke()
-
-    // Test drawing a green circle at mouse position if available
-    if (mousePosition) {
-      ctx.strokeStyle = 'green'
-      ctx.lineWidth = 4
-      ctx.beginPath()
-      ctx.arc(mousePosition.x, mousePosition.y, 30, 0, 2 * Math.PI)
-      ctx.stroke()
-      if (isDevMode) {
-        console.log('✅ Test circle drawn at mouse position:', mousePosition)
+    if (currentTool !== 'none') {
+      if (selectedAnnotations.length > 0 || selectedPolygons.length > 0) {
+        setSelectedAnnotations([])
+        setSelectedPolygons([])
       }
     }
-
-    if (isDevMode) {
-      console.log('✅ Test drawing completed')
-    }
-
-    // Also test with the scaled context
-    if (canvasContext) {
-      if (isDevMode) {
-        console.log('🧪 Testing with scaled context...')
-      }
-      canvasContext.fillStyle = 'purple'
-      canvasContext.fillRect(150, 150, 80, 80)
-      if (isDevMode) {
-        console.log('✅ Drew purple rectangle with scaled context')
-      }
-    }
-  }
-
-  // Add function to debug canvas and PDF alignment
-  const debugAlignment = () => {
-    if (!canvasRef.current || !containerRef.current) {
-      if (isDevMode) {
-        console.log('❌ Debug failed: Missing refs')
-      }
-      return
-    }
-
-    const canvas = canvasRef.current
-    const container = containerRef.current
-    const iframe = container.querySelector('iframe') as HTMLIFrameElement
-
-    if (isDevMode) {
-      console.log('🔍 Alignment Debug Info:')
-      console.log('Container:', {
-        rect: container.getBoundingClientRect(),
-        style: {
-          width: container.style.width,
-          height: container.style.height,
-          position: container.style.position,
-        },
-      })
-      console.log('Canvas:', {
-        rect: canvas.getBoundingClientRect(),
-        width: canvas.width,
-        height: canvas.height,
-        style: {
-          width: canvas.style.width,
-          height: canvas.style.height,
-          position: canvas.style.position,
-        },
-      })
-      if (iframe) {
-        console.log('Iframe:', {
-          rect: iframe.getBoundingClientRect(),
-          style: {
-            width: iframe.style.width,
-            height: iframe.style.height,
-            position: iframe.style.position,
-          },
-        })
-      }
-
-      // Test coordinate calculation
-      if (canvas) {
-        const rect = canvas.getBoundingClientRect()
-        const scale = 2
-        const testX = 100
-        const testY = 100
-        const scaledX = (testX - rect.left) / scale
-        const scaledY = (testY - rect.top) / scale
-        console.log('🔢 Coordinate test:', {
-          original: {x: testX, y: testY},
-          rect: {left: rect.left, top: rect.top},
-          scaled: {x: scaledX, y: scaledY},
-          scale,
-        })
-      }
-    }
-  }
-
-  // Add function to force canvas visibility
-  const forceCanvasVisibility = () => {
-    if (!canvasRef.current) {
-      if (isDevMode) {
-        console.log('❌ No canvas ref for visibility test')
-      }
-      return
-    }
-
-    const canvas = canvasRef.current
-
-    // Force canvas to be visible
-    canvas.style.backgroundColor = 'rgba(255, 0, 0, 0.3)'
-    canvas.style.border = '2px solid red'
-    canvas.style.zIndex = '999'
-
-    if (isDevMode) {
-      console.log('🔴 Forced canvas visibility with red background')
-    }
-
-    // Test drawing on the canvas
-    const ctx = canvas.getContext('2d')
-    if (ctx) {
-      ctx.fillStyle = 'yellow'
-      ctx.fillRect(0, 0, 200, 200)
-      if (isDevMode) {
-        console.log('✅ Drew yellow rectangle on canvas')
-      }
-    }
-  }
+  }, [
+    currentTool,
+    selectedAnnotations.length,
+    selectedPolygons.length,
+    isDevMode,
+    setSelectedAnnotations,
+    setSelectedPolygons,
+  ])
 
   // Ensure canvas is properly initialized
   useEffect(() => {
@@ -1734,9 +1219,8 @@ export default function SimplePDFViewer({
   }, [canvasRef.current, canvasContext])
 
   return (
-    <div className="card p-6 h-full flex flex-col">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-6">
+    <div className="card p-6 h-full flex flex-col overflow-visible">
+      <div className="flex justify-between items-center mb-6 relative">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
             <svg
@@ -1760,23 +1244,40 @@ export default function SimplePDFViewer({
         </div>
 
         <div className="flex gap-2">
+          {/* Undo/Redo buttons */}
           <button
-            onClick={() => setIsDevMode(!isDevMode)}
-            className={`btn btn-sm ${isDevMode ? 'btn-primary' : 'btn-outline'}`}
-            title="Toggle debug mode"
+            onClick={undo}
+            disabled={!canUndo}
+            className="btn btn-outline btn-sm"
+            title="Undo (Ctrl+Z)"
           >
-            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"
               />
             </svg>
-            {isDevMode ? 'Debug ON' : 'Debug OFF'}
           </button>
+          <button
+            onClick={redo}
+            disabled={!canRedo}
+            className="btn btn-outline btn-sm"
+            title="Redo (Ctrl+Y)"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 10h-10a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6"
+              />
+            </svg>
+          </button>
+
           {pdfUrl && annotations.length > 0 && (
-            <div className="relative download-menu">
+            <div className="relative download-menu z-[9999]">
               <button
                 onClick={() => setShowDownloadMenu(!showDownloadMenu)}
                 className="btn btn-primary btn-md shadow-lg hover:shadow-xl transition-all duration-200"
@@ -1805,14 +1306,14 @@ export default function SimplePDFViewer({
                 </svg>
               </button>
               {showDownloadMenu && (
-                <div className="absolute right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-xl z-20 min-w-[280px] animate-in">
+                <div className="absolute right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-xl z-[9999] min-w-[280px] animate-in">
                   <div className="p-2">
                     <button
                       onClick={() => {
                         capturePDFWithAnnotations()
                         setShowDownloadMenu(false)
                       }}
-                      className="flex items-center w-full text-left px-4 py-3 text-sm hover:bg-gray-50 rounded-md transition-colors"
+                      className="flex cursor-pointer items-center w-full text-left px-4 py-3 text-sm hover:bg-gray-50 rounded-md transition-colors"
                     >
                       <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
                         <svg
@@ -1843,7 +1344,7 @@ export default function SimplePDFViewer({
                         downloadWithAnnotations()
                         setShowDownloadMenu(false)
                       }}
-                      className="flex items-center w-full text-left px-4 py-3 text-sm hover:bg-gray-50 rounded-md transition-colors"
+                      className="flex cursor-pointer items-center w-full text-left px-4 py-3 text-sm hover:bg-gray-50 rounded-md transition-colors"
                     >
                       <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3">
                         <svg
@@ -1872,7 +1373,7 @@ export default function SimplePDFViewer({
                         downloadAnnotationsJSON()
                         setShowDownloadMenu(false)
                       }}
-                      className="flex items-center w-full text-left px-4 py-3 text-sm hover:bg-gray-50 rounded-md transition-colors"
+                      className="flex cursor-pointer items-center w-full text-left px-4 py-3 text-sm hover:bg-gray-50 rounded-md transition-colors"
                     >
                       <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
                         <svg
@@ -1892,33 +1393,6 @@ export default function SimplePDFViewer({
                       <div>
                         <div className="font-medium text-gray-900">Export Annotations (JSON)</div>
                         <div className="text-xs text-gray-500">Raw annotation data</div>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => {
-                        testDownload()
-                        setShowDownloadMenu(false)
-                      }}
-                      className="flex items-center w-full text-left px-4 py-3 text-sm hover:bg-gray-50 rounded-md transition-colors"
-                    >
-                      <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center mr-3">
-                        <svg
-                          className="w-4 h-4 text-orange-600"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                          />
-                        </svg>
-                      </div>
-                      <div>
-                        <div className="font-medium text-gray-900">Test PDF Download</div>
-                        <div className="text-xs text-gray-500">Debug download functionality</div>
                       </div>
                     </button>
                   </div>
@@ -1965,7 +1439,6 @@ export default function SimplePDFViewer({
         </div>
       </div>
 
-      {/* PDF Container */}
       <div
         ref={containerRef}
         className="relative border border-gray-200 rounded-lg bg-gray-50 flex-1 overflow-hidden"
@@ -1998,7 +1471,6 @@ export default function SimplePDFViewer({
               zIndex: 1,
             }}
             onLoad={() => {
-              // Additional attempt to hide toolbar elements
               setTimeout(() => {
                 const iframe = document.querySelector('iframe') as HTMLIFrameElement
                 if (iframe && iframe.contentDocument) {
@@ -2023,8 +1495,8 @@ export default function SimplePDFViewer({
                       }
                     `
                     iframe.contentDocument.head.appendChild(style)
-                  } catch (e) {
-                    // Cross-origin restrictions
+                  } catch {
+                    // Silently handle cross-origin restrictions
                   }
                 }
               }, 1000)
@@ -2072,148 +1544,16 @@ export default function SimplePDFViewer({
               isDrawing || currentTool === 'polygon'
                 ? 'crosshair'
                 : currentTool !== 'none'
-                ? 'pointer'
-                : 'default',
+                  ? 'pointer'
+                  : 'default',
             display: 'block',
             visibility: 'visible',
           }}
           onMouseDown={handleCanvasMouseDown}
           onMouseMove={handleCanvasMouseMove}
           onMouseUp={handleCanvasMouseUp}
-          onClick={() => {
-            if (isDevMode) {
-              console.log('🎯 CANVAS CLICKED!')
-            }
-          }}
         />
-
-        {/* Debug overlays - only show in dev mode */}
-        {isDevMode && (
-          <>
-            {mousePosition && (
-              <div className="absolute top-2 right-2 bg-green-500 text-white px-2 py-1 rounded text-xs z-30">
-                Mouse: {Math.round(mousePosition.x)}, {Math.round(mousePosition.y)}
-              </div>
-            )}
-            <div className="absolute top-12 left-2 bg-red-500 text-white px-2 py-1 rounded text-xs z-30">
-              Drawing: {isDrawing ? 'YES' : 'NO'}
-            </div>
-            <div className="absolute top-24 left-2 bg-blue-500 text-white px-2 py-1 rounded text-xs z-30">
-              Tool: {currentTool}
-            </div>
-            <div className="absolute top-36 left-2 bg-purple-500 text-white px-2 py-1 rounded text-xs z-30">
-              Points: {drawingPoints.length}
-            </div>
-            <div className="absolute top-48 left-2 bg-orange-500 text-white px-2 py-1 rounded text-xs z-30">
-              Canvas: {canvasContext ? 'OK' : 'NULL'}
-            </div>
-            <div className="absolute top-60 left-2 bg-green-500 text-white px-2 py-1 rounded text-xs z-30">
-              Canvas Ref: {canvasRef.current ? 'OK' : 'NULL'}
-            </div>
-            <div className="absolute top-72 left-2 bg-pink-500 text-white px-2 py-1 rounded text-xs z-30">
-              Container: {containerRef.current ? 'OK' : 'NULL'}
-            </div>
-            <div className="absolute top-84 left-2 bg-indigo-500 text-white px-2 py-1 rounded text-xs z-30">
-              Container Height:{' '}
-              {containerRef.current ? containerRef.current.offsetHeight + 'px' : 'N/A'}
-            </div>
-            <div className="absolute top-96 left-2 bg-teal-500 text-white px-2 py-1 rounded text-xs z-30">
-              Canvas Size:{' '}
-              {canvasRef.current ? canvasRef.current.width + 'x' + canvasRef.current.height : 'N/A'}
-            </div>
-
-            {/* Test buttons */}
-            <button
-              onClick={testCanvasDrawing}
-              className="absolute top-108 left-2 bg-yellow-500 text-black px-2 py-1 rounded text-xs z-30 hover:bg-yellow-400"
-            >
-              Test Canvas
-            </button>
-            <button
-              onClick={debugAlignment}
-              className="absolute top-120 left-2 bg-green-500 text-white px-2 py-1 rounded text-xs z-30 hover:bg-green-400"
-            >
-              Debug Alignment
-            </button>
-            <button
-              onClick={forceCanvasVisibility}
-              className="absolute top-132 left-2 bg-purple-500 text-white px-2 py-1 rounded text-xs z-30 hover:bg-purple-400"
-            >
-              Force Canvas Visibility
-            </button>
-          </>
-        )}
       </div>
-
-      {/* Signature Modal */}
-      {showSignatureModal && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]"
-          style={{position: 'fixed', top: 0, left: 0, right: 0, bottom: 0}}
-        >
-          <div className="card p-6 max-w-lg w-full mx-4 animate-in bg-white shadow-2xl">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Signature</h3>
-            <div className="mb-4">
-              <canvas
-                id="signatureCanvas"
-                className="border border-gray-300 rounded-lg w-full h-32 bg-white"
-                style={{cursor: 'crosshair'}}
-              />
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  const canvas = document.getElementById('signatureCanvas') as HTMLCanvasElement
-                  if (canvas) {
-                    const ctx = canvas.getContext('2d')
-                    if (ctx) {
-                      ctx.clearRect(0, 0, canvas.width, canvas.height)
-                    }
-                  }
-                }}
-                className="btn btn-outline"
-              >
-                Clear
-              </button>
-              <button
-                onClick={() => {
-                  const canvas = document.getElementById('signatureCanvas') as HTMLCanvasElement
-                  if (canvas && signaturePosition) {
-                    const signatureData = canvas.toDataURL()
-                    const annotation: SignatureAnnotation = {
-                      id: Date.now().toString(),
-                      type: 'signature',
-                      points: [signaturePosition],
-                      color: selectedColor,
-                      strokeWidth,
-                      page: 1,
-                      timestamp: Date.now(),
-                      signatureData,
-                      width: 200,
-                      height: 100,
-                    }
-                    onAnnotationAdd(annotation)
-                    setShowSignatureModal(false)
-                    setSignaturePosition(null)
-                  }
-                }}
-                className="btn btn-primary"
-              >
-                Add Signature
-              </button>
-              <button
-                onClick={() => {
-                  setShowSignatureModal(false)
-                  setSignaturePosition(null)
-                }}
-                className="btn btn-outline"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Drawing Status */}
       {isDrawing && drawingPoints.length > 0 && (
@@ -2230,9 +1570,7 @@ export default function SimplePDFViewer({
             <span className="font-medium">
               Drawing {currentTool} with {drawingPoints.length} points
             </span>
-            {currentTool === 'circle' && longPressTimer && (
-              <span className="text-blue-600">• Hold for perfect circle</span>
-            )}
+
             {currentTool === 'polygon' && (
               <span className="text-blue-600">• Click to add points • Click start to complete</span>
             )}

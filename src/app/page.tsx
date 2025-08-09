@@ -1,11 +1,11 @@
 'use client'
 
-import {useState, useRef, useEffect} from 'react'
+import { useState, useRef, useEffect } from 'react'
 import SimplePDFViewer from '@/components/SimplePDFViewer'
 import AnnotationToolbar from '@/components/AnnotationToolbar'
-import {PDFErrorBoundary} from '@/components/PDFErrorBoundary'
-import {AnnotationType, Annotation} from '@/types/annotation'
-import {configurePDFWorker} from '@/utils/pdf-config'
+import { PDFErrorBoundary } from '@/components/PDFErrorBoundary'
+import { AnnotationType, Annotation } from '@/types/annotation'
+import { configurePDFWorker } from '@/utils/pdf-config'
 
 export default function Home() {
   const [pdfFile, setPdfFile] = useState<File | null>(null)
@@ -13,8 +13,7 @@ export default function Home() {
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [selectedAnnotations, setSelectedAnnotations] = useState<string[]>([])
   const [selectedPolygons, setSelectedPolygons] = useState<string[]>([])
-  const [selectedAnnotation, setSelectedAnnotation] = useState<string | null>(null)
-  const [selectedColor, setSelectedColor] = useState<string>('#ff0000')
+  const [selectedColor, setSelectedColor] = useState<string>('#FF0000')
   const [strokeWidth, setStrokeWidth] = useState<number>(2)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
@@ -31,7 +30,6 @@ export default function Home() {
   }
 
   const handleToolChange = (tool: AnnotationType) => {
-    console.log('Tool changed from', currentTool, 'to', tool)
     setCurrentTool(tool)
   }
 
@@ -154,8 +152,6 @@ export default function Home() {
                   setSelectedPolygons={setSelectedPolygons}
                   selectedColor={selectedColor}
                   strokeWidth={strokeWidth}
-                  selectedAnnotation={selectedAnnotation}
-                  setSelectedAnnotation={setSelectedAnnotation}
                 />
               </PDFErrorBoundary>
             </div>
@@ -174,8 +170,6 @@ export default function Home() {
                 onColorChange={setSelectedColor}
                 strokeWidth={strokeWidth}
                 onStrokeWidthChange={setStrokeWidth}
-                selectedAnnotation={selectedAnnotation}
-                onAnnotationSelect={setSelectedAnnotation}
               />
             </div>
           </div>

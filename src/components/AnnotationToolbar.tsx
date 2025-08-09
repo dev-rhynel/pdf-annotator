@@ -1,7 +1,7 @@
 'use client'
 
-import {useState} from 'react'
-import {AnnotationType, Annotation} from '@/types/annotation'
+import React from 'react'
+import { AnnotationType, Annotation } from '@/types/annotation'
 
 interface AnnotationToolbarProps {
   currentTool: AnnotationType
@@ -15,27 +15,72 @@ interface AnnotationToolbarProps {
   onColorChange: (color: string) => void
   strokeWidth: number
   onStrokeWidthChange: (width: number) => void
-  selectedAnnotation: string | null
-  onAnnotationSelect: (id: string | null) => void
 }
 
 const tools = [
-  {type: 'line' as AnnotationType, name: 'Line', icon: '📏'},
-  {type: 'rectangle' as AnnotationType, name: 'Rectangle', icon: '⬜'},
-  {type: 'polygon' as AnnotationType, name: 'Polygon', icon: '🔷'},
-  {type: 'circle' as AnnotationType, name: 'Circle', icon: '⭕'},
-  {type: 'text' as AnnotationType, name: 'Text', icon: '📝'},
-  {type: 'signature' as AnnotationType, name: 'Signature', icon: '✍️'},
+  { type: 'line' as AnnotationType, name: 'Line', icon: '📏' },
+  { type: 'rectangle' as AnnotationType, name: 'Rectangle', icon: '⬜' },
+  { type: 'polygon' as AnnotationType, name: 'Polygon', icon: '🔷' },
+  { type: 'circle' as AnnotationType, name: 'Circle', icon: '⭕' },
+  { type: 'curve' as AnnotationType, name: 'Curve', icon: '🌊' },
 ]
 
-const colors = [
-  {value: '#ff0000', name: 'Red'},
-  {value: '#00ff00', name: 'Green'},
-  {value: '#0000ff', name: 'Blue'},
-  {value: '#ffff00', name: 'Yellow'},
-  {value: '#ff00ff', name: 'Magenta'},
-  {value: '#00ffff', name: 'Cyan'},
-  {value: '#000000', name: 'Black'},
+// Color families with coordinated palettes
+const colorFamilies = [
+  {
+    name: 'Classic',
+    colors: [
+      { value: '#000000', name: 'Black' },
+      { value: '#ffffff', name: 'White' },
+      { value: '#808080', name: 'Gray' },
+      { value: '#c0c0c0', name: 'Silver' },
+    ],
+  },
+  {
+    name: 'Reds',
+    colors: [
+      { value: '#ff0000', name: 'Red' },
+      { value: '#dc143c', name: 'Crimson' },
+      { value: '#8b0000', name: 'Dark Red' },
+      { value: '#ffb6c1', name: 'Light Pink' },
+    ],
+  },
+  {
+    name: 'Blues',
+    colors: [
+      { value: '#0000ff', name: 'Blue' },
+      { value: '#4169e1', name: 'Royal Blue' },
+      { value: '#000080', name: 'Navy' },
+      { value: '#87ceeb', name: 'Sky Blue' },
+    ],
+  },
+  {
+    name: 'Greens',
+    colors: [
+      { value: '#008000', name: 'Green' },
+      { value: '#228b22', name: 'Forest Green' },
+      { value: '#006400', name: 'Dark Green' },
+      { value: '#90ee90', name: 'Light Green' },
+    ],
+  },
+  {
+    name: 'Warm',
+    colors: [
+      { value: '#ff4500', name: 'Orange Red' },
+      { value: '#ffa500', name: 'Orange' },
+      { value: '#ffff00', name: 'Yellow' },
+      { value: '#ffd700', name: 'Gold' },
+    ],
+  },
+  {
+    name: 'Cool',
+    colors: [
+      { value: '#00ffff', name: 'Cyan' },
+      { value: '#40e0d0', name: 'Turquoise' },
+      { value: '#800080', name: 'Purple' },
+      { value: '#4b0082', name: 'Indigo' },
+    ],
+  },
 ]
 
 export default function AnnotationToolbar({
@@ -50,19 +95,14 @@ export default function AnnotationToolbar({
   onColorChange,
   strokeWidth,
   onStrokeWidthChange,
-  selectedAnnotation,
-  onAnnotationSelect,
 }: AnnotationToolbarProps) {
   const hasSelection = selectedAnnotations.length > 0 || selectedPolygons.length > 0
 
   const handleToolClick = (tool: AnnotationType) => {
-    console.log('Tool clicked:', tool, 'current tool:', currentTool)
     // If clicking the same tool that's already active, deselect it
     if (currentTool === tool) {
-      console.log('Deselecting tool:', tool)
       onToolChange('none' as AnnotationType)
     } else {
-      console.log('Selecting tool:', tool)
       onToolChange(tool)
     }
   }
@@ -125,20 +165,27 @@ export default function AnnotationToolbar({
 
       {/* Color Selection */}
       <div className="mb-6">
-        <h4 className="text-sm font-medium text-gray-700 mb-3">Color Palette</h4>
-        <div className="grid grid-cols-4 gap-2">
-          {colors.map(color => (
-            <button
-              key={color.value}
-              onClick={() => onColorChange(color.value)}
-              className={`w-12 h-12 rounded-lg border-2 transition-all duration-200 hover:scale-110 ${
-                selectedColor === color.value
-                  ? 'border-gray-800 shadow-lg scale-110'
-                  : 'border-gray-300 hover:border-gray-400'
-              }`}
-              style={{backgroundColor: color.value}}
-              title={color.name}
-            />
+        {/* Color Families */}
+        <div className="space-y-3">
+          {colorFamilies.map(family => (
+            <div key={family.name}>
+              <h5 className="text-xs font-medium text-gray-600 mb-1">{family.name}</h5>
+              <div className="grid grid-cols-4 gap-1.5">
+                {family.colors.map(color => (
+                  <button
+                    key={color.value}
+                    onClick={() => onColorChange(color.value)}
+                    className={`w-10 h-10 rounded-lg border-2 transition-all duration-200 hover:scale-105 ${
+                      selectedColor === color.value
+                        ? 'border-gray-800 shadow-lg scale-105 ring-2 ring-blue-300'
+                        : 'border-gray-300 hover:border-gray-400'
+                    }`}
+                    style={{ backgroundColor: color.value }}
+                    title={color.name}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>
@@ -198,33 +245,18 @@ export default function AnnotationToolbar({
               <p className="text-xs text-gray-400 mt-1">Start drawing to see them here</p>
             </div>
           ) : (
-            annotations.map((annotation, index) => (
+            annotations.map(annotation => (
               <div
                 key={annotation.id}
-                className={`group cursor-pointer transition-all duration-200 rounded-lg p-3 ${
-                  selectedAnnotation === annotation.id
-                    ? 'bg-blue-100 border-2 border-blue-300 shadow-md'
-                    : 'bg-gray-50 hover:bg-gray-100'
-                }`}
-                onClick={() =>
-                  onAnnotationSelect(selectedAnnotation === annotation.id ? null : annotation.id)
-                }
+                className="group cursor-pointer transition-all duration-200 rounded-lg p-3 bg-gray-50 hover:bg-gray-100"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-sm ${
-                        selectedAnnotation === annotation.id ? 'bg-blue-200' : 'bg-white'
-                      }`}
-                    >
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm bg-white">
                       <span className="text-sm">{getToolIcon(annotation.type)}</span>
                     </div>
                     <div>
-                      <div
-                        className={`font-medium text-sm ${
-                          selectedAnnotation === annotation.id ? 'text-blue-900' : 'text-gray-900'
-                        }`}
-                      >
+                      <div className="font-medium text-sm text-gray-900">
                         {getToolName(annotation.type)}
                       </div>
                       <div className="text-xs text-gray-500">
@@ -271,9 +303,10 @@ export default function AnnotationToolbar({
         <ul className="text-xs text-blue-800 space-y-1">
           <li>• Click annotation list items to select them</li>
           <li>• Drag selected annotations to move them</li>
-          <li>• Use the color picker to change annotation colors</li>
+          <li>• Use color families or custom color picker</li>
           <li>• Adjust stroke width for different line thicknesses</li>
-          <li>• Click and drag to create shapes and lines</li>
+          <li>• Curve tool: Click points, click near start to finish</li>
+          <li>• Polygon: Click near start point to close shape</li>
         </ul>
       </div>
     </div>

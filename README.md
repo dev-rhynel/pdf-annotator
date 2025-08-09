@@ -1,158 +1,277 @@
-# PDF Annotator
+# 📝 PDF Annotator
 
-A NextJS TypeScript application that allows you to annotate, draw lines, and polygons on PDF documents.
+A modern, feature-rich PDF annotation tool built with Next.js, TypeScript, and Canvas API. Create, edit, and manage annotations directly on PDF documents with an intuitive interface.
 
-## Features
+## ✨ Features
 
-- **PDF Upload**: Upload and view PDF documents
-- **Multiple Annotation Tools**:
-  - Line drawing
-  - Rectangle drawing
-  - Polygon drawing
-  - Circle drawing
-  - Text annotations
-  - Select tool for interaction
-- **Customization Options**:
-  - Color selection for annotations
-  - Adjustable stroke width
-  - Zoom in/out functionality
-- **Page Navigation**: Navigate through multi-page PDFs
-- **Annotation Management**: View, track, and delete annotations
-- **Modern UI**: Clean, responsive interface built with Tailwind CSS
+### 🎨 **Drawing Tools**
 
-## Technologies Used
+- **Line Tool**: Draw straight lines with precise control
+- **Rectangle Tool**: Create rectangular shapes and boundaries
+- **Circle Tool**: Draw perfect circles for highlighting areas
+- **Polygon Tool**: Multi-click polygon creation with live preview and fill
+- **Curve Tool**: Smooth curved lines with quadratic curve interpolation
 
-- **Next.js 14** - React framework with App Router
-- **TypeScript** - Type-safe development
-- **Tailwind CSS** - Utility-first CSS framework
-- **react-pdf** - PDF rendering and viewing
-- **fabric.js** - Canvas-based drawing and annotation
-- **pdf-lib** - PDF manipulation (for future export features)
+### ✍️ **Signature Support**
 
-## Getting Started
+- **Digital Signatures**: Draw signatures in a dedicated modal
+- **Auto-naming**: Sequential signature naming (Signature - 0001, 0002, etc.)
+- **Drag & Drop**: Move signatures after placement
+
+### 🎨 **Customization**
+
+- **Color Families**: Extensive color palette organized by families
+- **Default Colors**: Smart black color default for professional appearance
+- **Stroke Width**: Adjustable line thickness
+- **Live Preview**: Real-time drawing feedback
+
+### ⚡ **Advanced Features**
+
+- **Undo/Redo**: Full history management with keyboard shortcuts (Ctrl+Z, Ctrl+Y)
+- **Multi-format Export**: Download as PNG image or JSON data
+- **Responsive Design**: Works on desktop and mobile devices
+- **Production Ready**: Comprehensive test coverage and error handling
+
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- Node.js 18+ 
-- npm or yarn
+- Node.js 18+
+- npm, yarn, or pnpm
 
 ### Installation
 
-1. Clone the repository:
 ```bash
+# Clone the repository
 git clone <repository-url>
 cd pdf-annotator
-```
 
-2. Install dependencies:
-```bash
+# Install dependencies
 npm install
+# or
+pnpm install
+# or
+yarn install
 ```
 
-3. Run the development server:
+### Development
+
 ```bash
+# Start development server
 npm run dev
+# or
+pnpm dev
+# or
+yarn dev
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000) to see the application.
 
-## Usage
+### Production Build
 
-### Uploading a PDF
+```bash
+# Build for production
+npm run build
 
-1. Click on the upload area or drag and drop a PDF file
-2. The PDF will be loaded and displayed in the viewer
+# Start production server
+npm run start
+```
 
-### Drawing Annotations
+### Testing
 
-1. **Select a Tool**: Choose from the available annotation tools in the toolbar
-   - **Select**: Default mode for interaction
-   - **Line**: Draw straight lines
-   - **Rectangle**: Draw rectangular shapes
-   - **Polygon**: Draw multi-point polygons
-   - **Circle**: Draw circular shapes
-   - **Text**: Add text annotations
+```bash
+# Run tests
+npm run test
 
-2. **Choose Color**: Select a color from the color palette
+# Run tests in watch mode
+npm run test:watch
 
-3. **Adjust Stroke Width**: Use the slider to set the line thickness
+# Run tests with coverage
+npm run test:coverage
+```
 
-4. **Draw**: Click and drag on the PDF to create annotations
+## 🎯 Usage
 
-### Managing Annotations
+### 1. **Upload PDF**
 
-- **View**: All annotations are listed in the sidebar with timestamps
-- **Delete**: Click the "✕" button next to any annotation to remove it
-- **Navigate**: Use the page navigation buttons to move between pages
+- Click "Upload PDF" button or drag and drop a PDF file
+- The PDF will be displayed with annotation overlay
 
-### PDF Navigation
+### 2. **Select Drawing Tool**
 
-- **Previous/Next**: Navigate between pages using the buttons
-- **Zoom**: Use the "+" and "-" buttons to zoom in and out
-- **Page Counter**: See current page and total pages
+- Choose from Line, Rectangle, Circle, Polygon, Curve, or Signature tools
+- Select desired color and stroke width
 
-## Project Structure
+### 3. **Create Annotations**
+
+#### **Simple Tools (Line, Rectangle, Circle)**
+
+- Click and drag to create shape
+- Release mouse to complete
+
+#### **Multi-point Tools (Polygon, Curve)**
+
+- Click to add points
+- Move mouse to see live preview
+- Click near starting point to complete shape
+
+#### **Signatures**
+
+- Click to position signature
+- Draw signature in modal
+- Click "Add Signature" to place
+
+### 4. **Manage Annotations**
+
+- **Undo/Redo**: Use buttons or Ctrl+Z/Ctrl+Y
+- **Delete**: Select annotations from list and click delete
+- **Export**: Download as image or JSON
+
+## 🧪 Testing
+
+The application includes comprehensive tests covering:
+
+- **Component Rendering**: All UI components render correctly
+- **Drawing Functionality**: All drawing tools work as expected
+- **User Interactions**: Mouse events, keyboard shortcuts
+- **Error Handling**: Graceful handling of edge cases
+- **Feature Integration**: Undo/redo, file upload, export
+
+### Test Coverage Goals
+
+- Branches: 70%+
+- Functions: 70%+
+- Lines: 70%+
+- Statements: 70%+
+
+## 🏗️ Architecture
+
+### **Tech Stack**
+
+- **Framework**: Next.js 15 with App Router
+- **Language**: TypeScript for type safety
+- **Styling**: Tailwind CSS for responsive design
+- **Canvas**: HTML5 Canvas API for drawing
+- **Testing**: Jest + React Testing Library
+- **PDF Handling**: iframe-based PDF display
+
+### **Key Components**
+
+- `SimplePDFViewer`: Main annotation interface
+- `AnnotationToolbar`: Tool selection and controls
+- `PDFErrorBoundary`: Error handling wrapper
+
+### **State Management**
+
+- React hooks for local state
+- Annotation history for undo/redo
+- Real-time drawing state management
+
+## 📁 Project Structure
 
 ```
 src/
-├── app/
-│   ├── layout.tsx          # Root layout component
-│   ├── page.tsx            # Main application page
-│   └── globals.css         # Global styles
-├── components/
-│   ├── PDFViewer.tsx       # PDF rendering and annotation canvas
-│   └── AnnotationToolbar.tsx # Tool selection and annotation management
-└── types/
-    └── annotation.ts       # TypeScript type definitions
+├── app/                   # Next.js app router
+├── components/           # React components
+│   ├── SimplePDFViewer.tsx    # Main PDF viewer
+│   ├── AnnotationToolbar.tsx  # Tool controls
+│   └── PDFErrorBoundary.tsx   # Error handling
+├── types/               # TypeScript definitions
+│   └── annotation.ts    # Annotation type definitions
+├── utils/               # Utility functions
+└── __tests__/          # Test files
+
 ```
 
-## Key Components
+## 🔧 Configuration
 
-### PDFViewer
-- Handles PDF rendering using react-pdf
-- Manages canvas overlay for annotations using fabric.js
-- Implements drawing functionality for different annotation types
-- Provides zoom and page navigation
+### **Environment Variables**
 
-### AnnotationToolbar
-- Tool selection interface
-- Color and stroke width controls
-- Annotation list with delete functionality
-- User instructions and guidance
+No environment variables required for basic functionality.
 
-## Future Enhancements
+### **Build Configuration**
 
-- [ ] Export annotated PDFs
-- [ ] Save/load annotation sessions
-- [ ] Undo/redo functionality
-- [ ] More annotation types (arrows, highlights)
-- [ ] Text editing for text annotations
-- [ ] Annotation search and filtering
-- [ ] Collaborative annotation features
+- `next.config.ts`: Next.js configuration
+- `tailwind.config.ts`: Tailwind CSS settings
+- `tsconfig.json`: TypeScript compiler options
+- `jest.config.js`: Test configuration
 
-## Development
+## 🚀 Deployment
 
-### Available Scripts
+### **Vercel (Recommended)**
 
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run start` - Start production server
-- `npm run lint` - Run ESLint
+```bash
+# Deploy to Vercel
+vercel --prod
+```
 
-### Adding New Annotation Types
+### **Docker**
 
-1. Add the new type to `AnnotationType` in `types/annotation.ts`
-2. Implement the drawing logic in `PDFViewer.tsx`
-3. Add the tool to the tools array in `AnnotationToolbar.tsx`
+```dockerfile
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
+RUN npm run build
+EXPOSE 3000
+CMD ["npm", "start"]
+```
 
-## Contributing
+### **Static Export**
+
+```bash
+# For static hosting
+npm run build
+npm run export
+```
+
+## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+2. Create feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open Pull Request
 
-## License
+## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**PDF not loading**
+
+- Ensure PDF file is valid and not corrupted
+- Check browser console for CORS errors
+
+**Drawing not working**
+
+- Verify canvas is properly initialized
+- Check for JavaScript errors in console
+
+**Performance issues**
+
+- Reduce annotation count for complex documents
+- Clear browser cache and reload
+
+### Getting Help
+
+- Check [Issues](../../issues) for existing problems
+- Create new issue with detailed description
+- Include browser version and error messages
+
+## 🎯 Roadmap
+
+- [ ] **Text Annotations**: Add text input capability
+- [ ] **Shape Libraries**: Predefined shape templates
+- [ ] **Collaboration**: Real-time multi-user editing
+- [ ] **Cloud Storage**: Integration with cloud providers
+- [ ] **Mobile App**: Native mobile applications
+- [ ] **Advanced Export**: PDF with embedded annotations
+
+---
+
+**Built with ❤️ using Next.js, TypeScript, and Canvas API**
