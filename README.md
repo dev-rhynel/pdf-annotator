@@ -11,6 +11,7 @@ A modern, feature-rich PDF annotation tool built with Next.js, TypeScript, and C
 - **Circle Tool**: Draw perfect circles for highlighting areas
 - **Polygon Tool**: Multi-click polygon creation with live preview and fill
 - **Curve Tool**: Smooth curved lines with quadratic curve interpolation
+- **✏️ Pencil Tool**: Real-time freehand drawing with path smoothing
 
 ### ✍️ **Signature Support**
 
@@ -27,6 +28,9 @@ A modern, feature-rich PDF annotation tool built with Next.js, TypeScript, and C
 
 ### ⚡ **Advanced Features**
 
+- **Real-time Drawing**: Live pencil drawing with instant visual feedback
+- **Path Smoothing**: Automatic smoothing for natural-looking freehand drawings
+- **Performance Optimized**: Smart point collection and 60fps rendering
 - **Undo/Redo**: Full history management with keyboard shortcuts (Ctrl+Z, Ctrl+Y)
 - **Multi-format Export**: Download as PNG image or JSON data
 - **Responsive Design**: Works on desktop and mobile devices
@@ -99,7 +103,7 @@ npm run test:coverage
 
 ### 2. **Select Drawing Tool**
 
-- Choose from Line, Rectangle, Circle, Polygon, Curve, or Signature tools
+- Choose from Line, Rectangle, Circle, Polygon, Curve, Pencil, or Signature tools
 - Select desired color and stroke width
 
 ### 3. **Create Annotations**
@@ -114,6 +118,13 @@ npm run test:coverage
 - Click to add points
 - Move mouse to see live preview
 - Click near starting point to complete shape
+
+#### **✏️ Pencil Tool**
+
+- Click and drag to draw freehand
+- Release mouse to complete stroke
+- Path automatically smoothed for natural appearance
+- Press Escape to cancel current drawing
 
 #### **Signatures**
 
@@ -265,6 +276,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🎯 Roadmap
 
+- [x] **✏️ Pencil Tool**: Real-time freehand drawing (✅ **Completed**)
 - [ ] **Text Annotations**: Add text input capability
 - [ ] **Shape Libraries**: Predefined shape templates
 - [ ] **Collaboration**: Real-time multi-user editing

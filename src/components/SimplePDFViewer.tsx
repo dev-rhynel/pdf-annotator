@@ -43,6 +43,8 @@ export default function SimplePDFViewer({
   const [canvasContext, setCanvasContext] = useState<CanvasRenderingContext2D | null>(null)
   const [isDrawing, setIsDrawing] = useState<boolean>(false)
   const [drawingPoints, setDrawingPoints] = useState<Point[]>([])
+  const [isPencilDrawing, setIsPencilDrawing] = useState<boolean>(false)
+  const [currentPencilPath, setCurrentPencilPath] = useState<Point[]>([])
 
   const [mousePosition, setMousePosition] = useState<Point | null>(null)
   const [showDownloadMenu, setShowDownloadMenu] = useState<boolean>(false)
@@ -66,6 +68,24 @@ export default function SimplePDFViewer({
 
     setMousePosition({ x, y })
 
+    // Handle pencil drawing - continuous path tracking
+    if (isPencilDrawing && currentTool === 'pencil') {
+      setCurrentPencilPath(prev => {
+        // Only add point if it's far enough from the last point (for performance)
+        if (prev.length === 0) return [{ x, y }]
+
+        const lastPoint = prev[prev.length - 1]
+        const distance = Math.sqrt(Math.pow(x - lastPoint.x, 2) + Math.pow(y - lastPoint.y, 2))
+
+        // Add point if distance is greater than 2 pixels
+        if (distance > 2) {
+          return [...prev, { x, y }]
+        }
+        return prev
+      })
+      requestAnimationFrame(() => renderAnnotations())
+    }
+
     // Update drawing points for line, rectangle, and circle tools during mouse movement
     if (isDrawing && drawingPoints.length > 0) {
       if (currentTool === 'line' || currentTool === 'rectangle' || currentTool === 'circle') {
@@ -84,6 +104,13 @@ export default function SimplePDFViewer({
     const rect = canvasRef.current.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
+
+    // Handle pencil drawing - start drawing immediately on mouse down
+    if (currentTool === 'pencil') {
+      setIsPencilDrawing(true)
+      setCurrentPencilPath([{ x, y }])
+      return
+    }
 
     // Handle polygon differently - continuous clicking to add points
     if (currentTool === 'polygon') {
@@ -163,6 +190,25 @@ export default function SimplePDFViewer({
   }
 
   const handleCanvasMouseUp = () => {
+    // Handle pencil drawing completion
+    if (isPencilDrawing && currentTool === 'pencil' && currentPencilPath.length > 1) {
+      const annotation: Annotation = {
+        id: generateUniqueId(),
+        type: 'pencil',
+        points: currentPencilPath,
+        color: selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000',
+        strokeWidth,
+        page: 1,
+        timestamp: Date.now(),
+      }
+      onAnnotationAdd(annotation)
+      const newAnnotations = [...annotations, annotation]
+      saveToHistory(newAnnotations)
+      setIsPencilDrawing(false)
+      setCurrentPencilPath([])
+      return
+    }
+
     // Handle completion for line, rectangle, and circle tools
     if (isDrawing && drawingPoints.length >= 2) {
       if (currentTool === 'line') {
@@ -510,6 +556,34 @@ export default function SimplePDFViewer({
             context.stroke()
           }
           break
+
+        case 'pencil':
+          if (annotation.points.length >= 2) {
+            context.beginPath()
+            context.moveTo(annotation.points[0].x, annotation.points[0].y)
+
+            if (annotation.points.length === 2) {
+              // Simple line for two points
+              context.lineTo(annotation.points[1].x, annotation.points[1].y)
+            } else {
+              // Draw smooth path using quadratic curves
+              for (let i = 1; i < annotation.points.length - 1; i++) {
+                const currentPoint = annotation.points[i]
+                const nextPoint = annotation.points[i + 1]
+
+                // Use quadratic curve to create smoother path
+                const midX = (currentPoint.x + nextPoint.x) / 2
+                const midY = (currentPoint.y + nextPoint.y) / 2
+                context.quadraticCurveTo(currentPoint.x, currentPoint.y, midX, midY)
+              }
+
+              // Connect to the last point
+              const lastPoint = annotation.points[annotation.points.length - 1]
+              context.lineTo(lastPoint.x, lastPoint.y)
+            }
+            context.stroke()
+          }
+          break
       }
     })
 
@@ -551,6 +625,38 @@ export default function SimplePDFViewer({
           }
           break
       }
+    }
+
+    // Draw current pencil path being drawn
+    if (isPencilDrawing && currentTool === 'pencil' && currentPencilPath.length > 1) {
+      context.strokeStyle = selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000'
+      context.lineWidth = strokeWidth
+      context.lineCap = 'round'
+      context.lineJoin = 'round'
+
+      context.beginPath()
+      context.moveTo(currentPencilPath[0].x, currentPencilPath[0].y)
+
+      if (currentPencilPath.length === 2) {
+        // Simple line for two points
+        context.lineTo(currentPencilPath[1].x, currentPencilPath[1].y)
+      } else {
+        // Draw smooth path using quadratic curves
+        for (let i = 1; i < currentPencilPath.length - 1; i++) {
+          const currentPoint = currentPencilPath[i]
+          const nextPoint = currentPencilPath[i + 1]
+
+          // Use quadratic curve to create smoother path
+          const midX = (currentPoint.x + nextPoint.x) / 2
+          const midY = (currentPoint.y + nextPoint.y) / 2
+          context.quadraticCurveTo(currentPoint.x, currentPoint.y, midX, midY)
+        }
+
+        // Connect to the last point
+        const lastPoint = currentPencilPath[currentPencilPath.length - 1]
+        context.lineTo(lastPoint.x, lastPoint.y)
+      }
+      context.stroke()
     }
 
     // Render polygon and curve with special logic
@@ -687,6 +793,8 @@ export default function SimplePDFViewer({
     mousePosition,
     selectedColor,
     strokeWidth,
+    isPencilDrawing,
+    currentPencilPath,
   ])
 
   // Handle keyboard events for polygon completion and undo/redo
@@ -711,11 +819,19 @@ export default function SimplePDFViewer({
           setDrawingPoints([])
         }
       }
+
+      if (currentTool === 'pencil' && isPencilDrawing) {
+        if (e.key === 'Escape') {
+          // Cancel the pencil drawing
+          setIsPencilDrawing(false)
+          setCurrentPencilPath([])
+        }
+      }
     }
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [currentTool, isDrawing, drawingPoints, undo, redo])
+  }, [currentTool, isDrawing, drawingPoints, isPencilDrawing, undo, redo])
 
   // Function to merge selected polygons
   const mergeSelectedPolygons = () => {
@@ -1541,7 +1657,7 @@ export default function SimplePDFViewer({
             objectFit: 'contain',
             backgroundColor: 'transparent',
             cursor:
-              isDrawing || currentTool === 'polygon'
+              isDrawing || currentTool === 'polygon' || isPencilDrawing
                 ? 'crosshair'
                 : currentTool !== 'none'
                   ? 'pointer'
@@ -1556,7 +1672,8 @@ export default function SimplePDFViewer({
       </div>
 
       {/* Drawing Status */}
-      {isDrawing && drawingPoints.length > 0 && (
+      {((isDrawing && drawingPoints.length > 0) ||
+        (isPencilDrawing && currentPencilPath.length > 0)) && (
         <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <div className="flex items-center gap-2 text-sm text-blue-800">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1567,12 +1684,21 @@ export default function SimplePDFViewer({
                 d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
               />
             </svg>
-            <span className="font-medium">
-              Drawing {currentTool} with {drawingPoints.length} points
-            </span>
-
-            {currentTool === 'polygon' && (
-              <span className="text-blue-600">• Click to add points • Click start to complete</span>
+            {isPencilDrawing && currentTool === 'pencil' ? (
+              <span className="font-medium">
+                Drawing with pencil • {currentPencilPath.length} points • Release mouse to finish
+              </span>
+            ) : (
+              <>
+                <span className="font-medium">
+                  Drawing {currentTool} with {drawingPoints.length} points
+                </span>
+                {currentTool === 'polygon' && (
+                  <span className="text-blue-600">
+                    • Click to add points • Click start to complete
+                  </span>
+                )}
+              </>
             )}
           </div>
         </div>

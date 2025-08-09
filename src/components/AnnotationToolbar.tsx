@@ -23,6 +23,7 @@ const tools = [
   { type: 'polygon' as AnnotationType, name: 'Polygon', icon: '🔷' },
   { type: 'circle' as AnnotationType, name: 'Circle', icon: '⭕' },
   { type: 'curve' as AnnotationType, name: 'Curve', icon: '🌊' },
+  { type: 'pencil' as AnnotationType, name: 'Pencil', icon: '✏️' },
 ]
 
 // Color families with coordinated palettes

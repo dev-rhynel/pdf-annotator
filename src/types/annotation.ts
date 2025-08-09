@@ -4,6 +4,7 @@ export type AnnotationType =
   | 'polygon'
   | 'circle'
   | 'curve'
+  | 'pencil'
   | 'text'
   | 'select'
   | 'none'
@@ -50,11 +51,14 @@ export interface CurveAnnotation extends Annotation {
   points: Point[] // multiple points for smooth curve
 }
 
+export interface PencilAnnotation extends Annotation {
+  type: 'pencil'
+  points: Point[] // continuous drawing path points
+}
+
 export interface TextAnnotation extends Annotation {
   type: 'text'
   points: [Point] // position point
   text: string
   fontSize: number
 }
-
-
