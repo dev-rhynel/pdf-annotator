@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import SimplePDFViewer from '@/components/SimplePDFViewer'
+import EnhancedPDFViewer from '@/components/EnhancedPDFViewer'
 import AnnotationToolbar from '@/components/AnnotationToolbar'
 import { PDFErrorBoundary } from '@/components/PDFErrorBoundary'
 import { AnnotationType, Annotation } from '@/types/annotation'
@@ -15,6 +16,7 @@ export default function Home() {
   const [selectedPolygons, setSelectedPolygons] = useState<string[]>([])
   const [selectedColor, setSelectedColor] = useState<string>('#FF0000')
   const [strokeWidth, setStrokeWidth] = useState<number>(2)
+  const [useEnhancedViewer, setUseEnhancedViewer] = useState<boolean>(true)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   // Configure PDF worker on component mount
@@ -55,28 +57,48 @@ export default function Home() {
       <div className="max-w-7xl mx-auto p-6">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-              <svg
-                className="w-6 h-6 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                />
-              </svg>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
+                <svg
+                  className="w-6 h-6 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+                  PDF Annotator
+                </h1>
+                <p className="text-gray-600 text-sm">
+                  Professional PDF annotation tool with zoom & tiling
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
-                PDF Annotator
-              </h1>
-              <p className="text-gray-600 text-sm">Professional PDF annotation tool</p>
-            </div>
+
+            {pdfFile && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600">Viewer:</span>
+                <button
+                  onClick={() => setUseEnhancedViewer(!useEnhancedViewer)}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                    useEnhancedViewer
+                      ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                      : 'bg-gray-100 text-gray-700 border border-gray-200'
+                  }`}
+                >
+                  {useEnhancedViewer ? 'Enhanced' : 'Simple'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -139,20 +161,37 @@ export default function Home() {
             {/* Fixed-width PDF Viewer */}
             <div className="w-[800px] h-full flex-shrink-0">
               <PDFErrorBoundary>
-                <SimplePDFViewer
-                  file={pdfFile}
-                  currentTool={currentTool}
-                  annotations={annotations}
-                  onAnnotationAdd={handleAnnotationAdd}
-                  onAnnotationsReplace={handleAnnotationsReplace}
-                  canvasRef={canvasRef}
-                  selectedAnnotations={selectedAnnotations}
-                  selectedPolygons={selectedPolygons}
-                  setSelectedAnnotations={setSelectedAnnotations}
-                  setSelectedPolygons={setSelectedPolygons}
-                  selectedColor={selectedColor}
-                  strokeWidth={strokeWidth}
-                />
+                {useEnhancedViewer ? (
+                  <EnhancedPDFViewer
+                    file={pdfFile}
+                    currentTool={currentTool}
+                    annotations={annotations}
+                    onAnnotationAdd={handleAnnotationAdd}
+                    onAnnotationsReplace={handleAnnotationsReplace}
+                    canvasRef={canvasRef}
+                    selectedAnnotations={selectedAnnotations}
+                    selectedPolygons={selectedPolygons}
+                    setSelectedAnnotations={setSelectedAnnotations}
+                    setSelectedPolygons={setSelectedPolygons}
+                    selectedColor={selectedColor}
+                    strokeWidth={strokeWidth}
+                  />
+                ) : (
+                  <SimplePDFViewer
+                    file={pdfFile}
+                    currentTool={currentTool}
+                    annotations={annotations}
+                    onAnnotationAdd={handleAnnotationAdd}
+                    onAnnotationsReplace={handleAnnotationsReplace}
+                    canvasRef={canvasRef}
+                    selectedAnnotations={selectedAnnotations}
+                    selectedPolygons={selectedPolygons}
+                    setSelectedAnnotations={setSelectedAnnotations}
+                    setSelectedPolygons={setSelectedPolygons}
+                    selectedColor={selectedColor}
+                    strokeWidth={strokeWidth}
+                  />
+                )}
               </PDFErrorBoundary>
             </div>
 
