@@ -18,6 +18,7 @@ interface AnnotationToolbarProps {
 }
 
 const tools = [
+  { type: 'select' as AnnotationType, name: 'Move', icon: '✋' },
   { type: 'line' as AnnotationType, name: 'Line', icon: '📏' },
   { type: 'rectangle' as AnnotationType, name: 'Rectangle', icon: '⬜' },
   { type: 'triangle' as AnnotationType, name: 'Triangle', icon: '🔺' },

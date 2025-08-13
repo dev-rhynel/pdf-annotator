@@ -131,18 +131,33 @@ export default function EnhancedPDFViewer({
   }, [file])
 
   // Mouse event handlers with coordinate transformation
-  const transformCoordinates = useCallback(
-    (clientX: number, clientY: number): Point => {
-      if (!containerRef.current) return { x: 0, y: 0 }
+  const transformCoordinates = useCallback((clientX: number, clientY: number): Point => {
+    if (!containerRef.current || !transformRef.current) return { x: 0, y: 0 }
 
-      const rect = containerRef.current.getBoundingClientRect()
-      const x = (clientX - rect.left - pan.x) / zoom
-      const y = (clientY - rect.top - pan.y) / zoom
+    const rect = containerRef.current.getBoundingClientRect()
 
+    // Get the transform state from the library
+    const transformState =
+      transformRef.current.instance?.transformState || transformRef.current.state
+
+    if (!transformState) {
+      // Fallback to basic coordinate transformation
+      const x = clientX - rect.left
+      const y = clientY - rect.top
       return { x, y }
-    },
-    [pan, zoom]
-  )
+    }
+
+    // Get the actual transform values from react-zoom-pan-pinch
+    const scale = transformState.scale || 1
+    const positionX = transformState.positionX || 0
+    const positionY = transformState.positionY || 0
+
+    // Transform coordinates accounting for zoom and pan
+    const x = (clientX - rect.left - positionX) / scale
+    const y = (clientY - rect.top - positionY) / scale
+
+    return { x, y }
+  }, [])
 
   const handleCanvasMouseMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -190,8 +205,8 @@ export default function EnhancedPDFViewer({
 
   const handleCanvasMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
-      // If no tool is selected, allow panning
-      if (currentTool === 'none') {
+      // Only allow panning when select mode is active
+      if (currentTool === 'select') {
         setIsPanning(true)
         return
       }
@@ -435,15 +450,33 @@ export default function EnhancedPDFViewer({
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
     ctx.save()
-    ctx.translate(pan.x, pan.y)
-    ctx.scale(zoom, zoom)
+
+    // Get the actual transform state from react-zoom-pan-pinch
+    const transformState =
+      transformRef.current?.instance?.transformState || transformRef.current?.state
+    if (transformState) {
+      const scale = transformState.scale || 1
+      const positionX = transformState.positionX || 0
+      const positionY = transformState.positionY || 0
+      ctx.translate(positionX, positionY)
+      ctx.scale(scale, scale)
+    } else {
+      // Fallback to old values if transform not available
+      ctx.translate(pan.x, pan.y)
+      ctx.scale(zoom, zoom)
+    }
 
     annotations.forEach(annotation => {
       if (annotation.page !== currentPage) return
 
       ctx.strokeStyle = annotation.color
       ctx.fillStyle = annotation.color
-      ctx.lineWidth = annotation.strokeWidth / zoom
+
+      // Use the correct scale for line width
+      const transformState =
+        transformRef.current?.instance?.transformState || transformRef.current?.state
+      const currentScale = transformState?.scale || zoom
+      ctx.lineWidth = annotation.strokeWidth / currentScale
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
 
@@ -568,7 +601,12 @@ export default function EnhancedPDFViewer({
     if (isDrawing && drawingPoints.length > 1) {
       ctx.strokeStyle = selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000'
       ctx.fillStyle = selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000'
-      ctx.lineWidth = strokeWidth / zoom
+
+      // Use the correct scale for line width
+      const transformState =
+        transformRef.current?.instance?.transformState || transformRef.current?.state
+      const currentScale = transformState?.scale || zoom
+      ctx.lineWidth = strokeWidth / currentScale
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
 
@@ -606,7 +644,12 @@ export default function EnhancedPDFViewer({
     // Draw current pencil path
     if (isPencilDrawing && currentTool === 'pencil' && currentPencilPath.length > 1) {
       ctx.strokeStyle = selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000'
-      ctx.lineWidth = strokeWidth / zoom
+
+      // Use the correct scale for line width
+      const transformState =
+        transformRef.current?.instance?.transformState || transformRef.current?.state
+      const currentScale = transformState?.scale || zoom
+      ctx.lineWidth = strokeWidth / currentScale
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
 
@@ -633,13 +676,17 @@ export default function EnhancedPDFViewer({
     if (isDrawing && currentTool === 'triangle' && drawingPoints.length >= 1) {
       ctx.strokeStyle = selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000'
       ctx.fillStyle = selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000'
-      ctx.lineWidth = strokeWidth / zoom
+
+      // Use the correct scale for line width
+      const transformState =
+        transformRef.current?.instance?.transformState || transformRef.current?.state
+      const currentScale = transformState?.scale || zoom
+      ctx.lineWidth = strokeWidth / currentScale
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
-
       drawingPoints.forEach(point => {
         ctx.beginPath()
-        ctx.arc(point.x, point.y, 4 / zoom, 0, 2 * Math.PI)
+        ctx.arc(point.x, point.y, 4 / currentScale, 0, 2 * Math.PI)
         ctx.fill()
       })
 
@@ -676,12 +723,17 @@ export default function EnhancedPDFViewer({
     ) {
       ctx.strokeStyle = selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000'
       ctx.fillStyle = selectedColor && selectedColor.trim() !== '' ? selectedColor : '#000000'
-      ctx.lineWidth = strokeWidth / zoom
+
+      // Use the correct scale for line width
+      const transformState =
+        transformRef.current?.instance?.transformState || transformRef.current?.state
+      const currentScale = transformState?.scale || zoom
+      ctx.lineWidth = strokeWidth / currentScale
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
 
       ctx.beginPath()
-      ctx.arc(drawingPoints[0].x, drawingPoints[0].y, 3 / zoom, 0, 2 * Math.PI)
+      ctx.arc(drawingPoints[0].x, drawingPoints[0].y, 3 / currentScale, 0, 2 * Math.PI)
       ctx.fill()
 
       if (drawingPoints.length >= 1) {
@@ -1099,14 +1151,14 @@ export default function EnhancedPDFViewer({
             }}
             wheel={{
               step: 0.1,
-              disabled: isDrawing || isPencilDrawing || currentTool !== 'none',
+              disabled: isDrawing || isPencilDrawing || currentTool !== 'select',
             }}
             pinch={{
               step: 0.1,
-              disabled: isDrawing || isPencilDrawing || currentTool !== 'none',
+              disabled: isDrawing || isPencilDrawing || currentTool !== 'select',
             }}
             panning={{
-              disabled: isDrawing || isPencilDrawing || currentTool !== 'none',
+              disabled: isDrawing || isPencilDrawing || currentTool !== 'select',
             }}
           >
             <TransformComponent>
@@ -1149,11 +1201,11 @@ export default function EnhancedPDFViewer({
                       currentTool === 'triangle' ||
                       isPencilDrawing
                         ? 'crosshair'
-                        : currentTool !== 'none'
-                          ? 'pointer'
-                          : isPanning
+                        : currentTool === 'select'
+                          ? isPanning
                             ? 'grabbing'
-                            : 'grab',
+                            : 'grab'
+                          : 'default',
                     zIndex: 20,
                   }}
                   onMouseDown={handleCanvasMouseDown}
