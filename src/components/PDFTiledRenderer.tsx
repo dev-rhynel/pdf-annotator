@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import type { PDFPageProxy, PDFDocumentProxy } from 'pdfjs-dist'
 
 interface Tile {
   x: number
@@ -21,8 +22,7 @@ interface Viewport {
 }
 
 interface PDFTiledRendererProps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  pdfDocument: any
+  pdfDocument: PDFDocumentProxy
   currentPage: number
   viewport: Viewport
   onTileRendered?: (tile: Tile) => void
@@ -78,9 +78,8 @@ export default function PDFTiledRenderer({
   )
 
   // Render a single tile
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renderTile = useCallback(
-    async (tile: Tile, page: any, scale: number) => {
+    async (tile: Tile, page: PDFPageProxy, scale: number) => {
       if (tile.rendered || tile.loading) return
 
       try {
@@ -99,6 +98,7 @@ export default function PDFTiledRenderer({
         // Render the tile
         const renderContext = {
           canvasContext: ctx,
+          canvas: canvas,
           viewport: tileViewport,
           transform: transform,
         }

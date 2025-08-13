@@ -48,7 +48,6 @@ export default function SimplePDFViewer({
 
   const [mousePosition, setMousePosition] = useState<Point | null>(null)
   const [showDownloadMenu, setShowDownloadMenu] = useState<boolean>(false)
-  const [isDevMode, setIsDevMode] = useState<boolean>(false)
 
   // Undo/Redo state management
   const [history, setHistory] = useState<Annotation[][]>([[]])
@@ -726,7 +725,7 @@ export default function SimplePDFViewer({
       context.lineJoin = 'round'
 
       // Draw points as visible dots
-      drawingPoints.forEach((point, index) => {
+      drawingPoints.forEach(point => {
         context.beginPath()
         context.arc(point.x, point.y, 4, 0, 2 * Math.PI)
         context.fill()
@@ -1051,9 +1050,7 @@ export default function SimplePDFViewer({
   // Function to capture PDF iframe and combine with annotations
   const capturePDFWithAnnotations = async () => {
     if (!pdfUrl || !canvasRef.current) {
-      if (isDevMode) {
-        console.error('Missing required data for PDF capture')
-      }
+      console.error('Missing required data for PDF capture')
       return
     }
 
@@ -1123,9 +1120,7 @@ export default function SimplePDFViewer({
 
         pdfRendered = true
       } catch (pdfError) {
-        if (isDevMode) {
-          console.error('PDF.js rendering failed:', pdfError)
-        }
+        console.error('PDF.js rendering failed:', pdfError)
 
         // Fallback: Try to capture the current iframe content
         const currentIframe = document.querySelector('iframe') as HTMLIFrameElement
@@ -1143,7 +1138,7 @@ export default function SimplePDFViewer({
               backgroundColor: '#ffffff',
               width: tempCanvas.width,
               height: tempCanvas.height,
-              logging: isDevMode, // Enable logging only in dev mode
+              logging: false, // Enable logging only in dev mode
               removeContainer: false,
               foreignObjectRendering: true,
               ignoreElements: element => {
@@ -1163,9 +1158,7 @@ export default function SimplePDFViewer({
               pdfRendered = true
             }
           } catch (error) {
-            if (isDevMode) {
-              console.error('Iframe capture failed:', error)
-            }
+            console.error('Iframe capture failed:', error)
 
             // Alternative: Try to capture the entire container
             const container = containerRef.current
@@ -1180,7 +1173,7 @@ export default function SimplePDFViewer({
                   backgroundColor: '#ffffff',
                   width: tempCanvas.width,
                   height: tempCanvas.height,
-                  logging: isDevMode,
+                  logging: false,
                   removeContainer: false,
                   foreignObjectRendering: true,
                 })
@@ -1192,9 +1185,7 @@ export default function SimplePDFViewer({
                   pdfRendered = true
                 }
               } catch (containerError) {
-                if (isDevMode) {
-                  console.error('Container capture failed:', containerError)
-                }
+                console.error('Container capture failed:', containerError)
                 // If all else fails, just use white background with annotations
               }
             }
@@ -1259,15 +1250,11 @@ export default function SimplePDFViewer({
               URL.revokeObjectURL(img.src)
             }
             img.onerror = error => {
-              if (isDevMode) {
-                console.error('Image failed to load:', error)
-              }
+              console.error('Image failed to load:', error)
               createFallbackPDF()
             }
           } else {
-            if (isDevMode) {
-              console.error('Failed to create blob from canvas')
-            }
+            console.error('Failed to create blob from canvas')
             createFallbackPDF()
           }
         },
@@ -1281,9 +1268,7 @@ export default function SimplePDFViewer({
         createFallbackPDF()
       }
     } catch (error) {
-      if (isDevMode) {
-        console.error('Error creating PDF:', error)
-      }
+      console.error('Error creating PDF:', error)
       // Fallback: create PDF with just annotations and white background
       createFallbackPDF()
     }
@@ -1375,7 +1360,6 @@ export default function SimplePDFViewer({
     currentTool,
     selectedAnnotations.length,
     selectedPolygons.length,
-    isDevMode,
     setSelectedAnnotations,
     setSelectedPolygons,
   ])
@@ -1383,9 +1367,7 @@ export default function SimplePDFViewer({
   // Ensure canvas is properly initialized
   useEffect(() => {
     if (canvasRef.current && !canvasContext) {
-      if (isDevMode) {
-        console.log('🔄 Initializing canvas context...')
-      }
+      console.log('🔄 Initializing canvas context...')
       const canvas = canvasRef.current
 
       // Set canvas size to match container
@@ -1402,9 +1384,7 @@ export default function SimplePDFViewer({
         ctx.lineCap = 'round'
         ctx.lineJoin = 'round'
         setCanvasContext(ctx)
-        if (isDevMode) {
-          console.log('✅ Canvas context initialized')
-        }
+        console.log('✅ Canvas context initialized')
 
         // Force a render after initialization
         setTimeout(() => {
@@ -1432,9 +1412,7 @@ export default function SimplePDFViewer({
           ctx.lineCap = 'round'
           ctx.lineJoin = 'round'
           setCanvasContext(ctx)
-          if (isDevMode) {
-            console.log('✅ Canvas resized and context reinitialized')
-          }
+          console.log('✅ Canvas resized and context reinitialized')
 
           // Force a render after resize
           setTimeout(() => {

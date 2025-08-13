@@ -82,6 +82,7 @@ export default function EnhancedPDFViewer({
   // Canvas refs
   const containerRef = useRef<HTMLDivElement>(null)
   const annotationCanvasRef = useRef<HTMLCanvasElement>(null)
+  const renderAnnotationsRef = useRef<(() => void) | null>(null)
 
   // Undo/Redo state
   const [history, setHistory] = useState<Annotation[][]>([[]])
@@ -153,20 +154,31 @@ export default function EnhancedPDFViewer({
           }
           return prev
         })
-        requestAnimationFrame(() => renderAnnotations())
+        requestAnimationFrame(() => renderAnnotationsRef.current?.())
       }
 
       if (isDrawing && drawingPoints.length > 0) {
         if (currentTool === 'line' || currentTool === 'rectangle' || currentTool === 'circle') {
           setDrawingPoints([drawingPoints[0], { x, y }])
         } else if (currentTool === 'triangle') {
-          requestAnimationFrame(() => renderAnnotations())
+          requestAnimationFrame(() => renderAnnotationsRef.current?.())
         } else if (currentTool === 'polygon' || currentTool === 'curve') {
-          requestAnimationFrame(() => renderAnnotations())
+          requestAnimationFrame(() => renderAnnotationsRef.current?.())
         }
       }
     },
     [transformCoordinates, isPencilDrawing, currentTool, isDrawing, drawingPoints]
+  )
+
+  // Undo/Redo functions - defined early to avoid initialization issues
+  const saveToHistory = useCallback(
+    (newAnnotations: Annotation[]) => {
+      const newHistory = history.slice(0, historyIndex + 1)
+      newHistory.push([...newAnnotations])
+      setHistory(newHistory)
+      setHistoryIndex(newHistory.length - 1)
+    },
+    [history, historyIndex]
   )
 
   const handleCanvasMouseDown = useCallback(
@@ -280,6 +292,7 @@ export default function EnhancedPDFViewer({
       currentPage,
       onAnnotationAdd,
       annotations,
+      saveToHistory,
     ]
   )
 
@@ -368,18 +381,8 @@ export default function EnhancedPDFViewer({
     annotations,
     isDrawing,
     drawingPoints,
+    saveToHistory,
   ])
-
-  // Undo/Redo functions
-  const saveToHistory = useCallback(
-    (newAnnotations: Annotation[]) => {
-      const newHistory = history.slice(0, historyIndex + 1)
-      newHistory.push([...newAnnotations])
-      setHistory(newHistory)
-      setHistoryIndex(newHistory.length - 1)
-    },
-    [history, historyIndex]
-  )
 
   const undo = useCallback(() => {
     if (historyIndex > 0) {
@@ -707,6 +710,9 @@ export default function EnhancedPDFViewer({
     currentPencilPath,
     mousePosition,
   ])
+
+  // Assign renderAnnotations to ref for use in other callbacks
+  renderAnnotationsRef.current = renderAnnotations
 
   // Re-render annotations when needed
   useEffect(() => {
