@@ -35,8 +35,8 @@ export default function PDFTiledRenderer({
   onTileRendered,
 }: PDFTiledRendererProps) {
   const [tiles, setTiles] = useState<Tile[]>([])
-  const [tileSize] = useState<number>(512)
-  const [tileOverlap] = useState<number>(64)
+  const [tileSize] = useState<number>(256) // Smaller tiles for better performance
+  const [tileOverlap] = useState<number>(32) // Smaller overlap
   const [maxConcurrentTiles] = useState<number>(4)
   const [renderingQueue, setRenderingQueue] = useState<Tile[]>([])
   const [isRendering, setIsRendering] = useState<boolean>(false)
@@ -47,13 +47,19 @@ export default function PDFTiledRenderer({
   const calculateTiles = useCallback(
     (viewport: Viewport): Tile[] => {
       const tiles: Tile[] = []
-      const { x, y, width, height } = viewport
+      const { x, y, width, height, scale } = viewport
+
+      // Calculate visible area in PDF coordinates
+      const visibleX = -x / scale
+      const visibleY = -y / scale
+      const visibleWidth = width / scale
+      const visibleHeight = height / scale
 
       // Calculate tile grid
-      const startTileX = Math.floor(x / (tileSize - tileOverlap))
-      const endTileX = Math.ceil((x + width) / (tileSize - tileOverlap))
-      const startTileY = Math.floor(y / (tileSize - tileOverlap))
-      const endTileY = Math.ceil((y + height) / (tileSize - tileOverlap))
+      const startTileX = Math.floor(visibleX / (tileSize - tileOverlap))
+      const endTileX = Math.ceil((visibleX + visibleWidth) / (tileSize - tileOverlap))
+      const startTileY = Math.floor(visibleY / (tileSize - tileOverlap))
+      const endTileY = Math.ceil((visibleY + visibleHeight) / (tileSize - tileOverlap))
 
       for (let tileY = startTileY; tileY <= endTileY; tileY++) {
         for (let tileX = startTileX; tileX <= endTileX; tileX++) {
@@ -84,6 +90,7 @@ export default function PDFTiledRenderer({
 
       try {
         tile.loading = true
+        console.log('🔄 Tiling: Rendering tile at', tile.x, tile.y, 'with scale', scale)
         const canvas = tile.canvas
         const ctx = canvas.getContext('2d')
         if (!ctx) return
@@ -106,9 +113,10 @@ export default function PDFTiledRenderer({
         await page.render(renderContext).promise
         tile.rendered = true
         tile.loading = false
+        console.log('✅ Tiling: Successfully rendered tile at', tile.x, tile.y)
         onTileRendered?.(tile)
       } catch (err) {
-        console.error('Error rendering tile:', err)
+        console.error('❌ Tiling: Error rendering tile:', err)
         tile.loading = false
       }
     },
@@ -147,14 +155,19 @@ export default function PDFTiledRenderer({
     if (!pdfDocument || !currentPage) return
 
     const newTiles = calculateTiles(viewport)
+    console.log('🔄 Tiling: Calculating tiles for viewport:', viewport)
+    console.log('🔄 Tiling: Created', newTiles.length, 'tiles')
     setTiles(newTiles)
     setRenderingQueue(newTiles.filter(tile => !tile.rendered))
   }, [pdfDocument, currentPage, viewport, calculateTiles])
 
   // Process queue when it changes
   useEffect(() => {
+    if (renderingQueue.length > 0) {
+      console.log('🔄 Tiling: Processing queue with', renderingQueue.length, 'tiles')
+    }
     processQueue()
-  }, [processQueue])
+  }, [processQueue, renderingQueue.length])
 
   // Clean up tiles when component unmounts
   useEffect(() => {
@@ -168,18 +181,31 @@ export default function PDFTiledRenderer({
   }, [tiles])
 
   return (
-    <div ref={containerRef} className="absolute top-0 left-0 w-full h-full pointer-events-none">
+    <div
+      ref={containerRef}
+      className="absolute top-0 left-0 w-full h-full pointer-events-none"
+      style={{ zIndex: 1 }}
+    >
+      {/* Tiling background indicator */}
+      <div
+        className="absolute inset-0 opacity-5"
+        style={{
+          backgroundImage: 'radial-gradient(circle at 25% 25%, #3b82f6 1px, transparent 1px)',
+          backgroundSize: '20px 20px',
+          zIndex: 0,
+        }}
+      />
+
       {tiles.map(tile => (
         <div
           key={`${tile.x}-${tile.y}-${tile.width}-${tile.height}`}
           className="absolute"
           style={{
-            left: tile.x,
-            top: tile.y,
-            width: tile.width,
-            height: tile.height,
-            transform: `translate(${viewport.x}, ${viewport.y}) scale(${viewport.scale})`,
-            transformOrigin: '0 0',
+            left: tile.x * viewport.scale + viewport.x,
+            top: tile.y * viewport.scale + viewport.y,
+            width: tile.width * viewport.scale,
+            height: tile.height * viewport.scale,
+            zIndex: 1,
           }}
         >
           {tile.loading && (

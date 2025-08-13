@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch'
-import { AnnotationType, Annotation, Point, CircleAnnotation } from '@/types/annotation'
 import PDFTiledRenderer from './PDFTiledRenderer'
+import type { PDFDocumentProxy } from 'pdfjs-dist'
+import { AnnotationType, Annotation, Point, CircleAnnotation } from '@/types/annotation'
 
 const generateUniqueId = () => {
   return `annotation_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
@@ -43,17 +44,16 @@ export default function EnhancedPDFViewer({
   selectedColor,
   strokeWidth,
 }: EnhancedPDFViewerProps) {
+  const [isLoading, setIsLoading] = useState<boolean>(false)
+  const [error, setError] = useState<string>('')
+  const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null)
   const [pdfUrl, setPdfUrl] = useState<string>('')
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [pdfDocument, setPdfDocument] = useState<any>(null)
+  const [totalPages, setTotalPages] = useState<number>(0)
   const [currentPage] = useState<number>(1)
-  const [totalPages, setTotalPages] = useState<number>(1)
   const [pageDimensions, setPageDimensions] = useState<{ width: number; height: number }>({
     width: 0,
     height: 0,
   })
-  const [isLoading, setIsLoading] = useState<boolean>(true)
-  const [error, setError] = useState<string>('')
 
   // Drawing state
   const [isDrawing, setIsDrawing] = useState<boolean>(false)
@@ -77,6 +77,17 @@ export default function EnhancedPDFViewer({
     width: 0,
     height: 0,
     scale: 1,
+  })
+
+  // Tiling status
+  const [tilingStatus, setTilingStatus] = useState<{
+    active: boolean
+    tilesRendered: number
+    totalTiles: number
+  }>({
+    active: false,
+    tilesRendered: 0,
+    totalTiles: 0,
   })
 
   // Canvas refs
@@ -969,6 +980,14 @@ export default function EnhancedPDFViewer({
               </svg>
             </button>
           </div>
+
+          {/* Tiling Status Indicator */}
+          {tilingStatus.active && (
+            <div className="flex items-center gap-1 bg-green-100 border border-green-300 rounded-lg px-3 py-1 shadow-sm">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-xs font-medium text-green-700">Tiling Active</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1001,9 +1020,13 @@ export default function EnhancedPDFViewer({
                   viewport={viewport}
                   onTileRendered={(
                     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                    tile
+                    _tile
                   ) => {
-                    // Optional: Handle tile rendered event
+                    setTilingStatus(prev => ({
+                      ...prev,
+                      active: true,
+                      tilesRendered: prev.tilesRendered + 1,
+                    }))
                   }}
                 />
               )}
@@ -1081,6 +1104,25 @@ export default function EnhancedPDFViewer({
                 )}
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Tiling Status */}
+      {tilingStatus.active && (
+        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+          <div className="flex items-center gap-2 text-sm text-green-800">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+            <span className="font-medium">
+              Tiling System Active • {tilingStatus.tilesRendered} tiles rendered
+            </span>
           </div>
         </div>
       )}
