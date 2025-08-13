@@ -60,6 +60,7 @@ export default function EnhancedPDFViewer({
   const [isPencilDrawing, setIsPencilDrawing] = useState<boolean>(false)
   const [currentPencilPath, setCurrentPencilPath] = useState<Point[]>([])
   const [mousePosition, setMousePosition] = useState<Point | null>(null)
+  const [isPanning, setIsPanning] = useState<boolean>(false)
 
   // Zoom and pan state
   const [zoom, setZoom] = useState<number>(1)
@@ -71,6 +72,7 @@ export default function EnhancedPDFViewer({
   const renderAnnotationsRef = useRef<(() => void) | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const transformRef = useRef<any>(null)
+  const viewerContainerRef = useRef<HTMLDivElement>(null)
 
   // Undo/Redo state
   const [history, setHistory] = useState<Annotation[][]>([[]])
@@ -95,9 +97,26 @@ export default function EnhancedPDFViewer({
           setPdfDocument(pdf)
           setTotalPages(pdf.numPages)
 
+          // Wait a bit for the container to be properly sized
+          await new Promise(resolve => setTimeout(resolve, 100))
+
           const page = await pdf.getPage(1)
           const viewport = page.getViewport({ scale: 1 })
-          setPageDimensions({ width: viewport.width, height: viewport.height })
+
+          // Force PDF to fill the full width of the container
+          const containerWidth = viewerContainerRef.current?.clientWidth || 800
+          const containerHeight = viewerContainerRef.current?.clientHeight || 600
+
+          // Force PDF to fill the full width with minimal padding
+          const widthScale = (containerWidth * 0.98) / viewport.width
+          const heightScale = (containerHeight * 0.98) / viewport.height
+
+          // Use width scale to fill the full width
+          const scale = Math.max(widthScale, heightScale, 1.0)
+          const scaledWidth = viewport.width * scale
+          const scaledHeight = viewport.height * scale
+
+          setPageDimensions({ width: scaledWidth, height: scaledHeight })
 
           setIsLoading(false)
         }
@@ -171,6 +190,12 @@ export default function EnhancedPDFViewer({
 
   const handleCanvasMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      // If no tool is selected, allow panning
+      if (currentTool === 'none') {
+        setIsPanning(true)
+        return
+      }
+
       const { x, y } = transformCoordinates(e.clientX, e.clientY)
 
       if (currentTool === 'pencil') {
@@ -281,10 +306,17 @@ export default function EnhancedPDFViewer({
       onAnnotationAdd,
       annotations,
       saveToHistory,
+      isPanning,
     ]
   )
 
   const handleCanvasMouseUp = useCallback(() => {
+    // Stop panning if it was active
+    if (isPanning) {
+      setIsPanning(false)
+      return
+    }
+
     if (isPencilDrawing && currentTool === 'pencil' && currentPencilPath.length > 1) {
       const annotation: Annotation = {
         id: generateUniqueId(),
@@ -370,6 +402,7 @@ export default function EnhancedPDFViewer({
     isDrawing,
     drawingPoints,
     saveToHistory,
+    isPanning,
   ])
 
   const undo = useCallback(() => {
@@ -800,9 +833,13 @@ export default function EnhancedPDFViewer({
       const ctx = canvas.getContext('2d', { alpha: false })
       if (!ctx) return
 
-      // Set canvas size for high resolution - render at 2x scale for crisp text
-      const scale = 2
-      const viewport = page.getViewport({ scale })
+      // Calculate scale to match the page dimensions we set
+      const originalViewport = page.getViewport({ scale: 1 })
+      const scale = pageDimensions.width / originalViewport.width
+
+      // Render at 2x scale for crisp text
+      const renderScale = scale * 2
+      const viewport = page.getViewport({ scale: renderScale })
 
       // Set canvas dimensions
       canvas.width = viewport.width
@@ -819,7 +856,7 @@ export default function EnhancedPDFViewer({
       }
 
       await page.render(renderContext).promise
-      console.log('✅ PDF rendered at scale:', scale)
+      console.log('✅ PDF rendered at scale:', renderScale)
     } catch (err) {
       console.error('❌ Error rendering PDF:', err)
     }
@@ -832,6 +869,31 @@ export default function EnhancedPDFViewer({
     }, 150) // Increased delay to prevent rapid re-renders
     return () => clearTimeout(timeoutId)
   }, [renderPDF])
+
+  // Handle window resize to recalculate PDF scale
+  useEffect(() => {
+    const handleResize = async () => {
+      if (pdfDocument && viewerContainerRef.current) {
+        const containerWidth = viewerContainerRef.current.clientWidth
+        const containerHeight = viewerContainerRef.current.clientHeight
+        const page = await pdfDocument.getPage(1)
+        const viewport = page.getViewport({ scale: 1 })
+
+        // Force PDF to fill the full width with minimal padding
+        const widthScale = (containerWidth * 0.98) / viewport.width
+        const heightScale = (containerHeight * 0.98) / viewport.height
+
+        // Use width scale to fill the full width
+        const scale = Math.max(widthScale, heightScale, 1.0)
+        const scaledWidth = viewport.width * scale
+        const scaledHeight = viewport.height * scale
+        setPageDimensions({ width: scaledWidth, height: scaledHeight })
+      }
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [pdfDocument])
 
   if (isLoading) {
     return (
@@ -846,7 +908,7 @@ export default function EnhancedPDFViewer({
 
   if (error) {
     return (
-      <div className="card p-6 h-full flex items-center justify-center">
+      <div className="container shit card p-6 h-full flex items-center justify-center">
         <div className="text-center">
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <svg
@@ -870,7 +932,7 @@ export default function EnhancedPDFViewer({
   }
 
   return (
-    <div className="card p-6 h-full flex flex-col overflow-visible">
+    <div className="w-full card p-6 h-full flex flex-col overflow-visible">
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
@@ -993,76 +1055,90 @@ export default function EnhancedPDFViewer({
         </div>
       </div>
 
-      <div className="flex-1 relative border border-gray-200 rounded-lg bg-gray-50 overflow-hidden">
-        <TransformWrapper
-          ref={transformRef}
-          initialScale={1}
-          minScale={0.1}
-          maxScale={10}
-          limitToBounds={false}
-          doubleClick={{
-            mode: 'zoomIn',
-            step: 0.5,
-          }}
-          wheel={{
-            step: 0.1,
-            disabled: false,
-          }}
-          pinch={{
-            step: 0.1,
-            disabled: false,
-          }}
-        >
-          <TransformComponent>
-            <div
-              ref={containerRef}
-              className="relative mx-auto"
-              style={{
-                width: Math.min(pageDimensions.width, 800),
-                height: Math.min(pageDimensions.height, 1000),
-                minWidth: pageDimensions.width,
-                minHeight: pageDimensions.height,
-              }}
-            >
-              {/* Simple High-Quality PDF Canvas */}
-              {pdfDocument && (
+      <div
+        ref={viewerContainerRef}
+        className="flex-1 relative border border-gray-200 rounded-lg bg-gray-50 overflow-hidden flex items-center justify-center"
+      >
+        {/* Full-width container */}
+        <div className="w-full flex items-center justify-center h-full">
+          <TransformWrapper
+            ref={transformRef}
+            initialScale={1}
+            minScale={0.1}
+            maxScale={10}
+            limitToBounds={false}
+            centerOnInit={true}
+            doubleClick={{
+              mode: 'zoomIn',
+              step: 0.5,
+            }}
+            wheel={{
+              step: 0.1,
+              disabled: isDrawing || isPencilDrawing || currentTool !== 'none',
+            }}
+            pinch={{
+              step: 0.1,
+              disabled: isDrawing || isPencilDrawing || currentTool !== 'none',
+            }}
+            panning={{
+              disabled: isDrawing || isPencilDrawing || currentTool !== 'none',
+            }}
+          >
+            <TransformComponent>
+              <div
+                ref={containerRef}
+                className="relative"
+                style={{
+                  width: pageDimensions.width,
+                  height: pageDimensions.height,
+                  minWidth: pageDimensions.width,
+                  minHeight: pageDimensions.height,
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                }}
+              >
+                {/* Simple High-Quality PDF Canvas */}
+                {pdfDocument && (
+                  <canvas
+                    id="pdf-canvas"
+                    width={pageDimensions.width}
+                    height={pageDimensions.height}
+                    className="absolute top-0 left-0 pointer-events-none w-full h-full object-fill"
+                    style={{
+                      zIndex: 1,
+                    }}
+                  />
+                )}
+
+                {/* Annotations Canvas */}
                 <canvas
-                  id="pdf-canvas"
+                  ref={annotationCanvasRef}
                   width={pageDimensions.width}
                   height={pageDimensions.height}
-                  className="absolute top-0 left-0 pointer-events-none w-full h-full object-contain"
+                  className="absolute top-0 left-0 w-full h-full object-fill"
                   style={{
-                    zIndex: 1,
+                    pointerEvents: 'auto',
+                    cursor:
+                      isDrawing ||
+                      currentTool === 'polygon' ||
+                      currentTool === 'triangle' ||
+                      isPencilDrawing
+                        ? 'crosshair'
+                        : currentTool !== 'none'
+                          ? 'pointer'
+                          : isPanning
+                            ? 'grabbing'
+                            : 'grab',
+                    zIndex: 20,
                   }}
+                  onMouseDown={handleCanvasMouseDown}
+                  onMouseMove={handleCanvasMouseMove}
+                  onMouseUp={handleCanvasMouseUp}
                 />
-              )}
-
-              {/* Annotations Canvas */}
-              <canvas
-                ref={annotationCanvasRef}
-                width={pageDimensions.width}
-                height={pageDimensions.height}
-                className="absolute top-0 left-0 w-full h-full object-contain"
-                style={{
-                  pointerEvents: 'auto',
-                  cursor:
-                    isDrawing ||
-                    currentTool === 'polygon' ||
-                    currentTool === 'triangle' ||
-                    isPencilDrawing
-                      ? 'crosshair'
-                      : currentTool !== 'none'
-                        ? 'pointer'
-                        : 'default',
-                  zIndex: 20,
-                }}
-                onMouseDown={handleCanvasMouseDown}
-                onMouseMove={handleCanvasMouseMove}
-                onMouseUp={handleCanvasMouseUp}
-              />
-            </div>
-          </TransformComponent>
-        </TransformWrapper>
+              </div>
+            </TransformComponent>
+          </TransformWrapper>
+        </div>
       </div>
 
       {/* Drawing Status */}
