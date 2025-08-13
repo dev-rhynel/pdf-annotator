@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch'
-import PDFTiledRenderer from './PDFTiledRenderer'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { AnnotationType, Annotation, Point, CircleAnnotation } from '@/types/annotation'
 
@@ -65,35 +64,13 @@ export default function EnhancedPDFViewer({
   // Zoom and pan state
   const [zoom, setZoom] = useState<number>(1)
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
-  const [viewport, setViewport] = useState<{
-    x: number
-    y: number
-    width: number
-    height: number
-    scale: number
-  }>({
-    x: 0,
-    y: 0,
-    width: 0,
-    height: 0,
-    scale: 1,
-  })
-
-  // Tiling status
-  const [tilingStatus, setTilingStatus] = useState<{
-    active: boolean
-    tilesRendered: number
-    totalTiles: number
-  }>({
-    active: false,
-    tilesRendered: 0,
-    totalTiles: 0,
-  })
 
   // Canvas refs
   const containerRef = useRef<HTMLDivElement>(null)
   const annotationCanvasRef = useRef<HTMLCanvasElement>(null)
   const renderAnnotationsRef = useRef<(() => void) | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const transformRef = useRef<any>(null)
 
   // Undo/Redo state
   const [history, setHistory] = useState<Annotation[][]>([[]])
@@ -730,21 +707,6 @@ export default function EnhancedPDFViewer({
     renderAnnotations()
   }, [renderAnnotations])
 
-  // Update viewport when zoom/pan changes
-  useEffect(() => {
-    if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect()
-      const newViewport = {
-        x: -pan.x / zoom,
-        y: -pan.y / zoom,
-        width: rect.width / zoom,
-        height: rect.height / zoom,
-        scale: zoom,
-      }
-      setViewport(newViewport)
-    }
-  }, [zoom, pan])
-
   // Initialize history
   useEffect(() => {
     if (annotations.length > 0 && history.length === 1 && history[0].length === 0) {
@@ -801,6 +763,75 @@ export default function EnhancedPDFViewer({
       }
     }
   }, [pdfUrl])
+
+  // Smooth zoom functions
+  const smoothZoomTo = useCallback((targetScale: number, duration: number = 300) => {
+    if (!transformRef.current || !containerRef.current) return
+
+    // Use the transform library's smooth zoom
+    transformRef.current.zoomToElement(containerRef.current, duration, targetScale, 'easeOutCubic')
+  }, [])
+
+  const smoothZoomIn = useCallback(() => {
+    if (!transformRef.current) return
+    transformRef.current.zoomIn(0.5, 200)
+  }, [])
+
+  const smoothZoomOut = useCallback(() => {
+    if (!transformRef.current) return
+    transformRef.current.zoomOut(0.5, 200)
+  }, [])
+
+  const smoothResetView = useCallback(() => {
+    if (!transformRef.current) return
+    transformRef.current.resetTransform(300)
+  }, [])
+
+  // Simple high-quality PDF rendering function
+  const renderPDF = useCallback(async () => {
+    if (!pdfDocument || !pageDimensions.width || !pageDimensions.height) return
+
+    try {
+      const page = await pdfDocument.getPage(currentPage)
+      const canvas = document.getElementById('pdf-canvas') as HTMLCanvasElement
+      if (!canvas) return
+
+      // Create a new canvas context to avoid reuse issues
+      const ctx = canvas.getContext('2d', { alpha: false })
+      if (!ctx) return
+
+      // Set canvas size for high resolution - render at 2x scale for crisp text
+      const scale = 2
+      const viewport = page.getViewport({ scale })
+
+      // Set canvas dimensions
+      canvas.width = viewport.width
+      canvas.height = viewport.height
+
+      // Clear canvas completely
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+      // Render PDF at high resolution
+      const renderContext = {
+        canvasContext: ctx,
+        canvas: canvas,
+        viewport: viewport,
+      }
+
+      await page.render(renderContext).promise
+      console.log('✅ PDF rendered at scale:', scale)
+    } catch (err) {
+      console.error('❌ Error rendering PDF:', err)
+    }
+  }, [pdfDocument, currentPage, pageDimensions])
+
+  // Render PDF once when document loads
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      renderPDF()
+    }, 150) // Increased delay to prevent rapid re-renders
+    return () => clearTimeout(timeoutId)
+  }, [renderPDF])
 
   if (isLoading) {
     return (
@@ -906,21 +937,13 @@ export default function EnhancedPDFViewer({
           </button>
 
           {/* Zoom Controls */}
-          <div className="flex items-center gap-1 bg-white border border-gray-300 rounded-lg px-3 py-1 shadow-sm">
+          <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 py-1 shadow-sm">
             <button
-              onClick={() => {
-                const newZoom = Math.max(0.1, zoom - 0.25)
-                setZoom(newZoom)
-              }}
-              className="p-2 hover:bg-blue-50 hover:text-blue-600 rounded-md transition-colors duration-200"
+              onClick={smoothZoomOut}
+              className="p-2 text-gray-600 hover:bg-blue-50 hover:text-blue-600 rounded-md transition-colors duration-200"
               title="Zoom Out"
             >
-              <svg
-                className="w-4 h-4 text-gray-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -929,25 +952,15 @@ export default function EnhancedPDFViewer({
                 />
               </svg>
             </button>
+
             <div className="w-px h-4 bg-gray-300 mx-1"></div>
-            <span className="text-sm font-semibold min-w-[3.5rem] text-center text-gray-700">
-              {Math.round(zoom * 100)}%
-            </span>
-            <div className="w-px h-4 bg-gray-300 mx-1"></div>
+
             <button
-              onClick={() => {
-                const newZoom = Math.min(10, zoom + 0.25)
-                setZoom(newZoom)
-              }}
-              className="p-2 hover:bg-blue-50 hover:text-blue-600 rounded-md transition-colors duration-200"
+              onClick={smoothZoomIn}
+              className="p-2 text-gray-600 hover:bg-blue-50 hover:text-blue-600 rounded-md transition-colors duration-200"
               title="Zoom In"
             >
-              <svg
-                className="w-4 h-4 text-gray-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -956,21 +969,15 @@ export default function EnhancedPDFViewer({
                 />
               </svg>
             </button>
+
             <div className="w-px h-4 bg-gray-300 mx-1"></div>
+
             <button
-              onClick={() => {
-                setZoom(1)
-                setPan({ x: 0, y: 0 })
-              }}
-              className="p-2 hover:bg-blue-50 hover:text-blue-600 rounded-md transition-colors duration-200"
+              onClick={smoothResetView}
+              className="p-2 text-gray-600 hover:bg-blue-50 hover:text-blue-600 rounded-md transition-colors duration-200"
               title="Reset View"
             >
-              <svg
-                className="w-4 h-4 text-gray-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -982,63 +989,49 @@ export default function EnhancedPDFViewer({
           </div>
 
           {/* Tiling Status Indicator */}
-          {tilingStatus.active && (
-            <div className="flex items-center gap-1 bg-green-100 border border-green-300 rounded-lg px-3 py-1 shadow-sm">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-xs font-medium text-green-700">Tiling Active</span>
-            </div>
-          )}
+          {/* This section is removed as per the edit hint */}
         </div>
       </div>
 
       <div className="flex-1 relative border border-gray-200 rounded-lg bg-gray-50 overflow-hidden">
         <TransformWrapper
+          ref={transformRef}
           initialScale={1}
           minScale={0.1}
           maxScale={10}
-          onTransformed={(_, state) => {
-            setZoom(state.scale)
-            setPan({ x: state.positionX, y: state.positionY })
+          limitToBounds={false}
+          doubleClick={{
+            mode: 'zoomIn',
+            step: 0.5,
+          }}
+          wheel={{
+            step: 0.1,
+            disabled: false,
+          }}
+          pinch={{
+            step: 0.1,
+            disabled: false,
           }}
         >
           <TransformComponent>
             <div
               ref={containerRef}
-              className="relative"
+              className="relative mx-auto"
               style={{
-                width: pageDimensions.width,
-                height: pageDimensions.height,
+                width: Math.min(pageDimensions.width, 800),
+                height: Math.min(pageDimensions.height, 1000),
                 minWidth: pageDimensions.width,
                 minHeight: pageDimensions.height,
               }}
             >
-              {/* High-Resolution PDF Tiles */}
+              {/* Simple High-Quality PDF Canvas */}
               {pdfDocument && (
-                <PDFTiledRenderer
-                  pdfDocument={pdfDocument}
-                  currentPage={currentPage}
-                  viewport={viewport}
-                  onTileRendered={(
-                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                    _tile
-                  ) => {
-                    setTilingStatus(prev => ({
-                      ...prev,
-                      active: true,
-                      tilesRendered: prev.tilesRendered + 1,
-                    }))
-                  }}
-                />
-              )}
-
-              {/* Fallback PDF iframe for when tiling is not available */}
-              {pdfUrl && !pdfDocument && (
-                <iframe
-                  src={`${pdfUrl}#toolbar=0&navpanes=0&scrollbar=0&statusbar=0&messages=0&view=FitH&pagemode=none`}
-                  className="absolute top-0 left-0 w-full h-full"
+                <canvas
+                  id="pdf-canvas"
+                  width={pageDimensions.width}
+                  height={pageDimensions.height}
+                  className="absolute top-0 left-0 pointer-events-none w-full h-full object-contain"
                   style={{
-                    pointerEvents: 'none',
-                    border: 'none',
                     zIndex: 1,
                   }}
                 />
@@ -1047,10 +1040,10 @@ export default function EnhancedPDFViewer({
               {/* Annotations Canvas */}
               <canvas
                 ref={annotationCanvasRef}
-                className="absolute top-0 left-0"
+                width={pageDimensions.width}
+                height={pageDimensions.height}
+                className="absolute top-0 left-0 w-full h-full object-contain"
                 style={{
-                  width: pageDimensions.width,
-                  height: pageDimensions.height,
                   pointerEvents: 'auto',
                   cursor:
                     isDrawing ||
@@ -1109,23 +1102,7 @@ export default function EnhancedPDFViewer({
       )}
 
       {/* Tiling Status */}
-      {tilingStatus.active && (
-        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-          <div className="flex items-center gap-2 text-sm text-green-800">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-              />
-            </svg>
-            <span className="font-medium">
-              Tiling System Active • {tilingStatus.tilesRendered} tiles rendered
-            </span>
-          </div>
-        </div>
-      )}
+      {/* This section is removed as per the edit hint */}
     </div>
   )
 }
