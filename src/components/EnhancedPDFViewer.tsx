@@ -79,6 +79,11 @@ export default function EnhancedPDFViewer({
     scale: 1,
   })
 
+  // Smooth zoom state
+  const [isZooming, setIsZooming] = useState<boolean>(false)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const transformRef = useRef<any>(null)
+
   // Tiling status
   const [tilingStatus, setTilingStatus] = useState<{
     active: boolean
@@ -802,6 +807,34 @@ export default function EnhancedPDFViewer({
     }
   }, [pdfUrl])
 
+  // Smooth zoom functions
+  const smoothZoomTo = useCallback((targetScale: number, duration: number = 300) => {
+    if (!transformRef.current || !containerRef.current) return
+
+    setIsZooming(true)
+
+    transformRef.current.zoomToElement(containerRef.current, duration, targetScale, 'easeOutCubic')
+
+    setTimeout(() => {
+      setIsZooming(false)
+    }, duration)
+  }, [])
+
+  const smoothZoomIn = useCallback(() => {
+    const newZoom = Math.min(10, zoom + 0.25)
+    smoothZoomTo(newZoom, 250)
+  }, [zoom, smoothZoomTo])
+
+  const smoothZoomOut = useCallback(() => {
+    const newZoom = Math.max(0.1, zoom - 0.25)
+    smoothZoomTo(newZoom, 250)
+  }, [zoom, smoothZoomTo])
+
+  const smoothResetView = useCallback(() => {
+    smoothZoomTo(1, 400)
+    setPan({ x: 0, y: 0 })
+  }, [smoothZoomTo])
+
   if (isLoading) {
     return (
       <div className="card p-6 h-full flex items-center justify-center">
@@ -906,21 +939,18 @@ export default function EnhancedPDFViewer({
           </button>
 
           {/* Zoom Controls */}
-          <div className="flex items-center gap-1 bg-white border border-gray-300 rounded-lg px-3 py-1 shadow-sm">
+          <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 py-1 shadow-sm">
             <button
-              onClick={() => {
-                const newZoom = Math.max(0.1, zoom - 0.25)
-                setZoom(newZoom)
-              }}
-              className="p-2 hover:bg-blue-50 hover:text-blue-600 rounded-md transition-colors duration-200"
+              onClick={smoothZoomOut}
+              disabled={isZooming}
+              className={`p-2 rounded-md transition-all duration-200 ${
+                isZooming
+                  ? 'text-gray-300 cursor-not-allowed'
+                  : 'hover:bg-blue-50 hover:text-blue-600 hover:scale-105 text-gray-600'
+              }`}
               title="Zoom Out"
             >
-              <svg
-                className="w-4 h-4 text-gray-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -929,25 +959,48 @@ export default function EnhancedPDFViewer({
                 />
               </svg>
             </button>
-            <div className="w-px h-4 bg-gray-300 mx-1"></div>
-            <span className="text-sm font-semibold min-w-[3.5rem] text-center text-gray-700">
+
+            {/* Zoom Slider */}
+            <div className="flex items-center gap-2 min-w-[120px]">
+              <input
+                type="range"
+                min="0.1"
+                max="10"
+                step="0.1"
+                value={zoom}
+                onChange={e => {
+                  const newZoom = parseFloat(e.target.value)
+                  smoothZoomTo(newZoom, 150)
+                }}
+                disabled={isZooming}
+                className={`w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer slider transition-opacity ${
+                  isZooming ? 'opacity-50' : 'opacity-100'
+                }`}
+                style={{
+                  background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((zoom - 0.1) / 9.9) * 100}%, #e5e7eb ${((zoom - 0.1) / 9.9) * 100}%, #e5e7eb 100%)`,
+                }}
+              />
+            </div>
+
+            <span
+              className={`text-sm font-semibold min-w-[3.5rem] text-center transition-colors ${
+                isZooming ? 'text-gray-400' : 'text-gray-700'
+              }`}
+            >
               {Math.round(zoom * 100)}%
             </span>
-            <div className="w-px h-4 bg-gray-300 mx-1"></div>
+
             <button
-              onClick={() => {
-                const newZoom = Math.min(10, zoom + 0.25)
-                setZoom(newZoom)
-              }}
-              className="p-2 hover:bg-blue-50 hover:text-blue-600 rounded-md transition-colors duration-200"
+              onClick={smoothZoomIn}
+              disabled={isZooming}
+              className={`p-2 rounded-md transition-all duration-200 ${
+                isZooming
+                  ? 'text-gray-300 cursor-not-allowed'
+                  : 'hover:bg-blue-50 hover:text-blue-600 hover:scale-105 text-gray-600'
+              }`}
               title="Zoom In"
             >
-              <svg
-                className="w-4 h-4 text-gray-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -956,21 +1009,20 @@ export default function EnhancedPDFViewer({
                 />
               </svg>
             </button>
+
             <div className="w-px h-4 bg-gray-300 mx-1"></div>
+
             <button
-              onClick={() => {
-                setZoom(1)
-                setPan({ x: 0, y: 0 })
-              }}
-              className="p-2 hover:bg-blue-50 hover:text-blue-600 rounded-md transition-colors duration-200"
+              onClick={smoothResetView}
+              disabled={isZooming}
+              className={`p-2 rounded-md transition-all duration-200 ${
+                isZooming
+                  ? 'text-gray-300 cursor-not-allowed'
+                  : 'hover:bg-blue-50 hover:text-blue-600 hover:scale-105 text-gray-600'
+              }`}
               title="Reset View"
             >
-              <svg
-                className="w-4 h-4 text-gray-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -988,18 +1040,42 @@ export default function EnhancedPDFViewer({
               <span className="text-xs font-medium text-green-700">Tiling Active</span>
             </div>
           )}
+
+          {/* Zoom Status Indicator */}
+          {isZooming && (
+            <div className="flex items-center gap-1 bg-blue-100 border border-blue-300 rounded-lg px-3 py-1 shadow-sm">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+              <span className="text-xs font-medium text-blue-700">Zooming...</span>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="flex-1 relative border border-gray-200 rounded-lg bg-gray-50 overflow-hidden">
         <TransformWrapper
+          ref={transformRef}
           initialScale={1}
           minScale={0.1}
           maxScale={10}
+          limitToBounds={false}
+          doubleClick={{
+            mode: 'zoomIn',
+            step: 0.5,
+          }}
+          wheel={{
+            step: 0.1,
+            disabled: false,
+          }}
+          pinch={{
+            step: 0.1,
+            disabled: false,
+          }}
           onTransformed={(_, state) => {
             setZoom(state.scale)
             setPan({ x: state.positionX, y: state.positionY })
           }}
+          onZoomStart={() => setIsZooming(true)}
+          onZoomStop={() => setIsZooming(false)}
         >
           <TransformComponent>
             <div
