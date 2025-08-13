@@ -35,15 +35,15 @@ export default function PDFTiledRenderer({
   onTileRendered,
 }: PDFTiledRendererProps) {
   const [tiles, setTiles] = useState<Tile[]>([])
-  const [tileSize] = useState<number>(256) // Smaller tiles for better performance
-  const [tileOverlap] = useState<number>(32) // Smaller overlap
-  const [maxConcurrentTiles] = useState<number>(4)
+  const [tileSize] = useState<number>(1024) // Much larger tiles for better quality
+  const [tileOverlap] = useState<number>(128) // Larger overlap to prevent seams
+  const [maxConcurrentTiles] = useState<number>(2) // Fewer concurrent renders
   const [renderingQueue, setRenderingQueue] = useState<Tile[]>([])
   const [isRendering, setIsRendering] = useState<boolean>(false)
 
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Calculate tiles based on viewport
+  // Calculate tiles based on viewport - simplified and more efficient
   const calculateTiles = useCallback(
     (viewport: Viewport): Tile[] => {
       const tiles: Tile[] = []
@@ -55,16 +55,21 @@ export default function PDFTiledRenderer({
       const visibleWidth = width / scale
       const visibleHeight = height / scale
 
-      // Calculate tile grid
-      const startTileX = Math.floor(visibleX / (tileSize - tileOverlap))
-      const endTileX = Math.ceil((visibleX + visibleWidth) / (tileSize - tileOverlap))
-      const startTileY = Math.floor(visibleY / (tileSize - tileOverlap))
-      const endTileY = Math.ceil((visibleY + visibleHeight) / (tileSize - tileOverlap))
+      // Calculate tile grid with larger tiles
+      const effectiveTileSize = tileSize - tileOverlap
+      const startTileX = Math.floor(visibleX / effectiveTileSize)
+      const endTileX = Math.ceil((visibleX + visibleWidth) / effectiveTileSize)
+      const startTileY = Math.floor(visibleY / effectiveTileSize)
+      const endTileY = Math.ceil((visibleY + visibleHeight) / effectiveTileSize)
 
-      for (let tileY = startTileY; tileY <= endTileY; tileY++) {
-        for (let tileX = startTileX; tileX <= endTileX; tileX++) {
-          const tileXPos = tileX * (tileSize - tileOverlap)
-          const tileYPos = tileY * (tileSize - tileOverlap)
+      // Limit the number of tiles to prevent excessive rendering
+      const maxTiles = 16 // Maximum tiles to render at once
+      let tileCount = 0
+
+      for (let tileY = startTileY; tileY <= endTileY && tileCount < maxTiles; tileY++) {
+        for (let tileX = startTileX; tileX <= endTileX && tileCount < maxTiles; tileX++) {
+          const tileXPos = tileX * effectiveTileSize
+          const tileYPos = tileY * effectiveTileSize
 
           tiles.push({
             x: tileXPos,
@@ -75,6 +80,7 @@ export default function PDFTiledRenderer({
             rendered: false,
             loading: false,
           })
+          tileCount++
         }
       }
 
@@ -83,7 +89,7 @@ export default function PDFTiledRenderer({
     [tileSize, tileOverlap]
   )
 
-  // Render a single tile
+  // Render a single tile with proper scaling
   const renderTile = useCallback(
     async (tile: Tile, page: PDFPageProxy, scale: number) => {
       if (tile.rendered || tile.loading) return
@@ -91,16 +97,34 @@ export default function PDFTiledRenderer({
       try {
         tile.loading = true
         console.log('🔄 Tiling: Rendering tile at', tile.x, tile.y, 'with scale', scale)
+
         const canvas = tile.canvas
         const ctx = canvas.getContext('2d')
         if (!ctx) return
 
+        // Set canvas size to match tile dimensions
         canvas.width = tile.width
         canvas.height = tile.height
 
-        // Calculate the viewport for this tile
-        const tileViewport = page.getViewport({ scale })
-        const transform = [scale, 0, 0, scale, -tile.x * scale, -tile.y * scale]
+        // Clear the canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+        // Calculate the proper scale for this tile
+        // The tile should be rendered at the same scale as the viewport
+        const actualScale = scale
+
+        // Create a viewport for this specific tile
+        const tileViewport = page.getViewport({ scale: actualScale })
+
+        // Calculate the transform to position the tile correctly
+        const transform = [
+          actualScale,
+          0,
+          0,
+          actualScale,
+          -tile.x * actualScale,
+          -tile.y * actualScale,
+        ]
 
         // Render the tile
         const renderContext = {
@@ -113,7 +137,13 @@ export default function PDFTiledRenderer({
         await page.render(renderContext).promise
         tile.rendered = true
         tile.loading = false
-        console.log('✅ Tiling: Successfully rendered tile at', tile.x, tile.y)
+        console.log(
+          '✅ Tiling: Successfully rendered tile at',
+          tile.x,
+          tile.y,
+          'with scale',
+          actualScale
+        )
         onTileRendered?.(tile)
       } catch (err) {
         console.error('❌ Tiling: Error rendering tile:', err)
@@ -186,16 +216,6 @@ export default function PDFTiledRenderer({
       className="absolute top-0 left-0 w-full h-full pointer-events-none"
       style={{ zIndex: 1 }}
     >
-      {/* Tiling background indicator */}
-      <div
-        className="absolute inset-0 opacity-5"
-        style={{
-          backgroundImage: 'radial-gradient(circle at 25% 25%, #3b82f6 1px, transparent 1px)',
-          backgroundSize: '20px 20px',
-          zIndex: 0,
-        }}
-      />
-
       {tiles.map(tile => (
         <div
           key={`${tile.x}-${tile.y}-${tile.width}-${tile.height}`}
@@ -216,11 +236,15 @@ export default function PDFTiledRenderer({
           <canvas
             ref={el => {
               if (el && tile.canvas) {
-                el.width = tile.width
-                el.height = tile.height
+                // Set the display canvas size to match the scaled tile size
+                el.width = tile.width * viewport.scale
+                el.height = tile.height * viewport.scale
                 const ctx = el.getContext('2d')
                 if (ctx && tile.rendered) {
-                  ctx.drawImage(tile.canvas, 0, 0)
+                  // Clear the canvas first
+                  ctx.clearRect(0, 0, el.width, el.height)
+                  // Draw the tile canvas with proper scaling
+                  ctx.drawImage(tile.canvas, 0, 0, el.width, el.height)
                 }
               }
             }}
