@@ -1066,7 +1066,7 @@ export default function EnhancedPDFViewer({
             initialScale={1}
             minScale={0.1}
             maxScale={10}
-            limitToBounds={false}
+            limitToBounds={true}
             centerOnInit={true}
             doubleClick={{
               mode: 'zoomIn',
